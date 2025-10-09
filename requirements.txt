@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 streamlit
 pandas
 numpy
@@ -5,3 +6,12 @@ plotly
 streamlit-aggrid
 openpyxl
 pillow
+=======
+streamlit
+pandas
+numpy
+plotly
+streamlit-aggrid
+openpyxl
+pillow
+>>>>>>> 9d6e93be93bf2e8e7bd4d8ea23bb3cb552276c22
