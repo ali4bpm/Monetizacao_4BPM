@@ -186,7 +186,8 @@ with st.sidebar:
 # Title + description + criteria block
 # ---------------------------
 
-# Background image styling (institucional, translúcido)
+
+# Background image styling (institucional, translúcido) e remoção de ícones fork/github/menu
 def get_base64_image(img_path):
     with open(img_path, "rb") as img_file:
         return base64.b64encode(img_file.read()).decode()
@@ -208,6 +209,10 @@ PAGE_BG = f"""
 .stApp {{
     font-family: 'Segoe UI', Arial, sans-serif;
 }}
+/* Esconde ícones de fork, github e menu */
+[data-testid="stDecoration"] {{ display: none !important; }}
+[data-testid="stToolbar"] {{ display: none !important; }}
+.css-1q7i1vy.e1fqkh3o3 {{ display: none !important; }}
 </style>
 """
 st.markdown(PAGE_BG, unsafe_allow_html=True)
@@ -304,19 +309,49 @@ else:
 
     st.markdown("<hr style='margin:0.5em 0;'>", unsafe_allow_html=True)
 
-    # Tabela dinâmica interativa (AgGrid)
-    st.subheader("Tabela dinâmica — Resultado filtrado")
-    gb = GridOptionsBuilder.from_dataframe(group.reset_index(drop=True))
+
+    # Tabela dinâmica interativa (AgGrid) - oculta colunas REGISTROS, % do Valor e % da Quantidade
+    st.subheader("Tabela Monetização por Categoria")
+    group_display = group.drop(columns=["REGISTROS", "% do Valor", "% da Quantidade"], errors="ignore")
+    gb = GridOptionsBuilder.from_dataframe(group_display.reset_index(drop=True))
     gb.configure_pagination(paginationAutoPageSize=True)
     gb.configure_default_column(editable=False, groupable=True, filter=True, resizable=True, sortable=True)
     gb.configure_side_bar()
     gb.configure_selection('single')
     gridOptions = gb.build()
-    AgGrid(group.reset_index(drop=True), gridOptions=gridOptions, height=420, theme='alpine', fit_columns_on_grid_load=True)
+    AgGrid(group_display.reset_index(drop=True), gridOptions=gridOptions, height=420, theme='alpine', fit_columns_on_grid_load=True)
 
-    # download button (csv)
-    csv = group.to_csv(index=False).encode("utf-8")
-    st.download_button("📥 Baixar tabela (CSV)", data=csv, file_name="monetizacao_filtrada.csv", mime="text/csv")
+    # download button (PDF)
+    import io
+    from reportlab.lib.pagesizes import letter, landscape
+    from reportlab.pdfgen import canvas
+    from reportlab.platypus import Table, TableStyle
+    from reportlab.lib import colors
+
+    def df_to_pdf_bytes(df):
+        buffer = io.BytesIO()
+        c = canvas.Canvas(buffer, pagesize=landscape(letter))
+        data = [df.columns.tolist()] + df.values.tolist()
+        table = Table(data)
+        style = TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#002060')),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0,0), (-1,-1), 10),
+            ('BOTTOMPADDING', (0,0), (-1,0), 8),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+        ])
+        table.setStyle(style)
+        table.wrapOn(c, 800, 600)
+        table.drawOn(c, 30, 500)
+        c.save()
+        pdf = buffer.getvalue()
+        buffer.close()
+        return pdf
+
+    pdf_bytes = df_to_pdf_bytes(group_display)
+    st.download_button("📥 Baixar tabela (PDF)", data=pdf_bytes, file_name="monetizacao_filtrada.pdf", mime="application/pdf")
 
     # ---------------------------
     # Indicator: compare total_valor vs previous period
