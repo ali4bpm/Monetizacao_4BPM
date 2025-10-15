@@ -9,11 +9,7 @@ from datetime import timedelta
 from st_aggrid import AgGrid, GridOptionsBuilder
 from PIL import Image
 import base64
-import io
-from reportlab.lib.pagesizes import letter, landscape
-from reportlab.pdfgen import canvas
-from reportlab.platypus import Table, TableStyle
-from reportlab.lib import colors
+
 st.set_page_config(
     page_title="MONETIZAÇÃO BATALHÃO POTENGI - 4º BPM PMRN",
     layout="wide",
@@ -325,33 +321,7 @@ else:
     gridOptions = gb.build()
     AgGrid(group_display.reset_index(drop=True), gridOptions=gridOptions, height=420, theme='alpine', fit_columns_on_grid_load=True)
 
-    # download button (PDF)
     
-
-    def df_to_pdf_bytes(df):
-        buffer = io.BytesIO()
-        c = canvas.Canvas(buffer, pagesize=landscape(letter))
-        data = [df.columns.tolist()] + df.values.tolist()
-        table = Table(data)
-        style = TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#002060')),
-            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0,0), (-1,-1), 10),
-            ('BOTTOMPADDING', (0,0), (-1,0), 8),
-            ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-        ])
-        table.setStyle(style)
-        table.wrapOn(c, 800, 600)
-        table.drawOn(c, 30, 500)
-        c.save()
-        pdf = buffer.getvalue()
-        buffer.close()
-        return pdf
-
-    pdf_bytes = df_to_pdf_bytes(group_display)
-    st.download_button("📥 Baixar tabela (PDF)", data=pdf_bytes, file_name="monetizacao_filtrada.pdf", mime="application/pdf")
 
     # ---------------------------
     # Indicator: compare total_valor vs previous period
