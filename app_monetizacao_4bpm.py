@@ -63,6 +63,7 @@ def try_load_excel(paths):
             df = pd.read_excel(p, sheet_name=None)  # read all sheets
             return p, df
         except Exception as e:
+            st.write(f"Erro ao tentar ler {p}: {e}")
             continue
     return None, None
 
