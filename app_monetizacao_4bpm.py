@@ -58,16 +58,13 @@ MONET_MAP = {
 @st.cache_data(ttl=600, show_spinner="Carregando dados do Google Sheets...") # Cache para 10 minutos
 def load_google_sheet_data(sheet_id, gid):
     """Carrega os dados diretamente do Google Sheets via URL de exportação CSV."""
-    # NOVO: Usando o formato de exportação CSV, mais robusto
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
     try:
-        # Lê a planilha diretamente para um DataFrame
         df = pd.read_csv(url)
         # Normaliza colunas
         df.columns = [col.strip() for col in df.columns]
         return df
     except Exception as e:
-        # Exibe a URL e o erro específico no sidebar para facilitar o debug
         st.sidebar.error(f"Erro ao carregar dados do Google Sheets:")
         st.sidebar.error(f"URL: {url}")
         st.sidebar.error(f"Detalhe: {e}")
@@ -90,12 +87,13 @@ def compute_monetized(df, cat_col, qty_col):
     def monet_value(row):
         cat = row.get(cat_col)
         qty = row.get(qty_col)
-        if pd.isna(qty) or qty == "":
+        # Usa o valor já limpo na coluna col_qty, mas repete a checagem por segurança (agora é numérico)
+        if pd.isna(qty) or qty == 0:
             return 0.0
-        try:
-            qty_num = float(qty)
-        except:
-            return 0.0
+        
+        # Como já garantimos que qty é numérico no bloco de carregamento, podemos usar diretamente.
+        qty_num = qty
+        
         # get unit cost
         if cat in MONET_MAP:
             unit_cost = MONET_MAP[cat][1]
@@ -139,6 +137,11 @@ if col_qty is None:
 # normalize date
 df = df_raw.copy()
 df = ensure_datetime(df, col_date)
+
+# FIX PRINCIPAL: Converte a coluna de quantidade para numérico.
+# Coerce (converte para NaN) qualquer valor que não seja numérico e, em seguida, preenche NaN com 0.
+# Isso garante que a coluna 'group["QUANTIDADE"]' seja do tipo float e evita o TypeError na divisão.
+df[col_qty] = pd.to_numeric(df[col_qty], errors='coerce').fillna(0)
 
 # drop rows sem data
 df = df[~df[col_date].isna()].copy()
@@ -279,8 +282,11 @@ else:
     total_valor = group["VALOR_MONETIZADO"].sum()
     total_qtd   = group["QUANTIDADE"].sum()
     # percentages
+    
+    # Esta linha agora deve funcionar corretamente, pois group["QUANTIDADE"] é garantidamente numérico
     group["% do Valor"] = (group["VALOR_MONETIZADO"] / total_valor * 100).fillna(0).round(2)
-    group["% da Quantidade"] = (group["QUANTIDADE"] / total_qtd * 100).fillna(0).round(2)
+    group["% da Quantidade"] = (group["QUANTIDADE"] / total_qtd * 100).fillna(0).round(2) 
+    
     group["VALOR_MONETIZADO"] = group["VALOR_MONETIZADO"].round(2)
     group["QUANTIDADE"] = group["QUANTIDADE"].round(3)
 
