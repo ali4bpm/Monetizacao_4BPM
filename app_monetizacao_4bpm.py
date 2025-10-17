@@ -11,7 +11,7 @@ from PIL import Image
 import base64
 
 st.set_page_config(
-    page_title="MONETIZAÇÃO BATALHÃO POTENGI - 4º BPM PMRN",
+    page_title="MONETIZAÇÃO BATALHÃO POTENGI - 4º BPM PMRN", page_icon="brasao.jpg",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -49,6 +49,7 @@ MONET_MAP = {
     "Veículos de passeio": ( "Unidade", 55092.43 ),
     "Motocicletas": ( "Unidade", 18889.78 ),
     "Veículos pesados": ( "Unidade", 120980.0 ),
+    "Dinheiro apreendido": ( "R$", 1.0 ),
 }
 
 # ---------------------------
