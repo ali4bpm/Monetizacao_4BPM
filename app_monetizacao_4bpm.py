@@ -7,7 +7,6 @@ from st_aggrid import AgGrid, GridOptionsBuilder
 from PIL import Image
 import base64
 import io 
-import os 
 
 st.set_page_config(
     page_title="MONETIZAÇÃO BATALHÃO POTENGI - 4º BPM PMRN", page_icon="brasao.jpg",
@@ -18,39 +17,15 @@ st.set_page_config(
 # ---------------------------
 # Config / assets
 # ---------------------------
-# CORREÇÃO CRÍTICA: Ajuste do nome do arquivo para corresponder ao que está no disco (com espaço)
-EXCEL_DATA_PATH = "Tabela_Monetizacao_4 BPM_PM_RN.xlsx"
+# DEFINIÇÃO DOS CAMINHOS DOS ARQUIVOS (USANDO OS NOMES EXATOS E FORMATO CSV)
+CRITERIA_PATH = "Tabela_Monetizacao_4 BPM_PM_RN.xlsx - Critérios.csv"
+BASE_DATA_PATH = "Tabela_Monetizacao_4 BPM_PM_RN.xlsx - Base_Monetização.csv"
 BRASAO_PATH = "brasao.jpg" 
 
-# Monetization mapping (usado para cálculo de valor)
-MONET_MAP = {
-    "Maconha": ( "Kg", 2168.4 ),
-    "Haxixe": ( "Kg", 12000.0 ),
-    "Pasta base": ( "Kg", 120000.0 ),
-    "Cloridrato de cocaína": ( "Kg", 180000.0 ),
-    "Crack": ( "Kg", 20000.0 ),
-    "Anfetaminas": ( "Unidade", 6.0 ),
-    "Barbitúricos": ( "Unidade", 6.0 ),
-    "LSD": ( "Ponto", 30.0 ),
-    "Lança-perfume": ( "Caixa", 1250.0 ),
-    "Ecstasy": ( "Unidade", 40.0 ),
-    "Cigarro": ( "Pacote", 35.0 ),
-    "Armas - Revólver": ( "Unidade", 3000.0 ),
-    "Armas - Revólver Artesanal": ( "Unidade", 500.0 ),
-    "Armas - Pistola": ( "Unidade", 5000.0 ),
-    "Armas - Fuzil": ( "Unidade", 40000.0 ),
-    "Armas - Metralhadora e Submetralhadora": ( "Unidade", 30000.0 ),
-    "Armas - Espingarda": ( "Unidade", 5000.0 ),
-    "Armas - Espingarda Artesanal": ( "Unidade", 600.0 ),
-    "Armas - Carabina": ( "Unidade", 5000.0 ),
-    "Munições": ( "Unidade", 15.0 ),
-    "Veículos de passeio": ( "Unidade", 55092.43 ),
-    "Motocicletas": ( "Unidade", 18889.78 ),
-    "Veículos pesados": ( "Unidade", 120980.0 ),
-    "Dinheiro apreendido": ( "R$", 1.0 ),
-}
+# O MONET_MAP SERÁ GERADO DINAMICAMENTE
+MONET_MAP = {} 
 
-# CRIAÇÃO DO MAPA DE CATEGORIAS
+# CRIAÇÃO DO MAPA DE CATEGORIAS (Mapeamento de nomes curtos para nomes completos)
 CATEGORY_MAPPING = {
     'Artesanal Curta': 'Armas - Revólver Artesanal',
     'Revólver': 'Armas - Revólver',
@@ -62,18 +37,10 @@ CATEGORY_MAPPING = {
     'Carabina': 'Armas - Carabina',
     'Munição': 'Munições', 
     'Dinheiro apreendido': 'Dinheiro apreendido',
+    'Dinheiro Apreendido': 'Dinheiro apreendido', # Adicionado para robustez
     'Artesanal Longa': 'Armas - Espingarda Artesanal',
 }
-
-armas_auto = {
-    k.split("Armas - ")[-1]: k for k in MONET_MAP.keys() if k.startswith("Armas - ")
-}
-CATEGORY_MAPPING.update(armas_auto)
-
-outras_auto = {
-    k: k for k in MONET_MAP.keys() if not k.startswith("Armas - ") and k != "Munições"
-}
-CATEGORY_MAPPING.update(outras_auto)
+# As chaves finais (do MONET_MAP) serão adicionadas ao CATEGORY_MAPPING posteriormente
 
 # ---------------------------
 # Helpers
@@ -92,14 +59,14 @@ def ensure_datetime(df, col):
     return df
 
 def normalize_category(cat):
-    """Normaliza a categoria para corresponder às chaves do MONET_MAP."""
+    """Normaliza a categoria para corresponder às chaves do MONET_MAP final."""
     if pd.isna(cat):
         return cat
     cat_str = str(cat).strip()
     return CATEGORY_MAPPING.get(cat_str, cat_str)
 
 
-def compute_monetized(df, cat_col, qty_col):
+def compute_monetized(df, cat_col, qty_col, current_monet_map):
     df['__CATEGORIA_NORMALIZADA'] = df[cat_col].apply(normalize_category)
     
     def monet_value(row):
@@ -113,11 +80,12 @@ def compute_monetized(df, cat_col, qty_col):
         except:
             return 0.0
         
+        # Dinheiro apreendido é o valor exato, sem custo unitário
         if cat == 'Dinheiro apreendido':
              return qty_num
         
-        if cat in MONET_MAP:
-            unit_cost = MONET_MAP[cat][1]
+        if cat in current_monet_map:
+            unit_cost = current_monet_map[cat][1]
         else:
             unit_cost = 0.0
             
@@ -126,21 +94,75 @@ def compute_monetized(df, cat_col, qty_col):
     df["_VALOR_MONETIZADO"] = df.apply(monet_value, axis=1)
     return df.drop(columns=['__CATEGORIA_NORMALIZADA'])
 
-# Função de Carregamento de Dados (LENDO O ARQUIVO EXCEL DO DISCO)
-@st.cache_data(show_spinner="Carregando e processando dados da base...")
-def load_data(path):
+# ---------------------------
+# Funções de Carregamento de Dados (CSV)
+# ---------------------------
+
+# 1. Carrega os critérios para montar o MONET_MAP
+@st.cache_data(show_spinner="Carregando critérios de monetização...")
+def load_criteria(path):
+    criteria_map = {}
     try:
-        # Tenta ler a primeira aba (índice 0)
-        df_raw = pd.read_excel(path, engine='openpyxl', sheet_name=0)
+        # Lendo o arquivo CSV
+        df_crit = pd.read_csv(path)
+        
+        # Normaliza colunas
+        df_crit.columns = [c.strip() for c in df_crit.columns]
+        
+        # Colunas esperadas no arquivo Critérios.csv
+        col_cat  = find_column(df_crit, ["Categoria"])
+        col_unit = find_column(df_crit, ["Unidade de Medida"])
+        col_cost = find_column(df_crit, ["Custo Unitário (R$)"])
+        
+        if not (col_cat and col_unit and col_cost):
+             st.error("Colunas essenciais (Categoria, Unidade de Medida, Custo Unitário (R$)) não encontradas no arquivo de Critérios.")
+             return None
+        
+        # Constrói o MONET_MAP
+        for index, row in df_crit.iterrows():
+            cat = str(row[col_cat]).strip()
+            unit = str(row[col_unit]).strip()
+            cost = row[col_cost]
+            
+            if pd.notna(cat) and pd.notna(cost) and cost > 0:
+                criteria_map[cat] = (unit, float(cost))
+                
+        # Atualiza o CATEGORY_MAPPING com as chaves finais dos critérios
+        global CATEGORY_MAPPING
+        armas_auto = {
+            k.split("Armas - ")[-1]: k for k in criteria_map.keys() if k.startswith("Armas - ")
+        }
+        CATEGORY_MAPPING.update(armas_auto)
+        outras_auto = {
+            k: k for k in criteria_map.keys() if not k.startswith("Armas - ") and k != "Munições" and k != "Dinheiro apreendido"
+        }
+        CATEGORY_MAPPING.update(outras_auto)
+        
+        return criteria_map
+
     except FileNotFoundError:
-        # Se falhar, exibe a mensagem de erro original, sem o bloco de diagnóstico
-        st.error(f"Arquivo de dados Excel '{path}' não encontrado. Verifique se o nome do arquivo corresponde EXATAMENTE ao nome no código.")
-        return None
-    except ImportError:
-        st.error("A biblioteca 'openpyxl' é necessária para ler arquivos .xlsx. Por favor, instale-a usando: `pip install openpyxl`.")
+        st.error(f"Arquivo de Critérios '{path}' não encontrado. Verifique se o nome do arquivo está EXATO.")
         return None
     except Exception as e:
-        st.error(f"Erro na leitura ou processamento do arquivo Excel: {e}")
+        st.error(f"Erro na leitura ou processamento do arquivo de Critérios CSV: {e}")
+        return None
+
+# 2. Carrega e processa os dados da base principal
+@st.cache_data(show_spinner="Carregando e processando dados da base...")
+def load_base_data(path, current_monet_map):
+    if not current_monet_map:
+        st.error("Não foi possível carregar os Critérios de Monetização. Parando o carregamento da base.")
+        return None
+        
+    try:
+        # Lendo o arquivo CSV
+        df_raw = pd.read_csv(path)
+        
+    except FileNotFoundError:
+        st.error(f"Arquivo de Dados '{path}' não encontrado. Verifique se o nome do arquivo está EXATO.")
+        return None
+    except Exception as e:
+        st.error(f"Erro na leitura e processamento do arquivo de Dados CSV: {e}")
         return None
 
     # 2. NORMALIZAR COLUNAS (remover espaços)
@@ -153,21 +175,26 @@ def load_data(path):
     col_qty  = find_column(df_raw, ["Qtde", "Quantidade"])
 
     if col_date is None or col_cat is None or col_qty is None:
-        st.error("Colunas essenciais (Data, Categoria ou Qtde/Quantidade) não foram encontradas na tabela. Verifique se os nomes das colunas estão corretos ou se a aba de dados não é a primeira.")
+        st.error("Colunas essenciais (Data, Categoria ou Qtde/Quantidade) não foram encontradas na tabela principal.")
         return None
 
     # 4. PREPARAÇÃO E CÁLCULO
     df = df_raw.copy()
     df = ensure_datetime(df, col_date)
     df = df[~df[col_date].isna()].copy()
-    df = compute_monetized(df, col_cat, col_qty)
+    # Passando o MONET_MAP carregado
+    df = compute_monetized(df, col_cat, col_qty, current_monet_map)
 
     return df, col_date, col_cat, col_qty
 
 # ---------------------------
-# Load data (CHAMADA DA FUNÇÃO COM CACHE)
+# Load data (CHAMADA PRINCIPAL)
 # ---------------------------
-result = load_data(EXCEL_DATA_PATH)
+MONET_MAP = load_criteria(CRITERIA_PATH)
+if MONET_MAP is None:
+    st.stop()
+    
+result = load_base_data(BASE_DATA_PATH, MONET_MAP)
 
 if result is None:
     st.stop()
@@ -274,17 +301,16 @@ st.markdown(
 """
 )
 # show criteria table
-crit_df = pd.DataFrame([
+crit_df_display = pd.DataFrame([
     {"Categoria": k, "Unidade de Medida": MONET_MAP[k][0], "Custo Unitário (R$)": MONET_MAP[k][1]} for k in MONET_MAP
 ])
-st.dataframe(crit_df.sort_values("Categoria").reset_index(drop=True))
+st.dataframe(crit_df_display.sort_values("Categoria").reset_index(drop=True))
 
 st.markdown("---")
 
 # ---------------------------
 # Filtering & Dashboard
 # ---------------------------
-
 start_dt = pd.to_datetime(start_date)
 end_dt   = pd.to_datetime(end_date) + pd.Timedelta(hours=23, minutes=59, seconds=59)
 
