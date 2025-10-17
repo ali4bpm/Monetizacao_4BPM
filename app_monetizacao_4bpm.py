@@ -119,7 +119,7 @@ def compute_monetized(df, cat_col, qty_col):
 # ---------------------------
 # Load data
 # ---------------------------
-path_used, sheets = try_load_excel(EXCEL_POSSIBLE_PATHS)
+path_used, sheets = try_load_excel()
 if sheets is None:
     st.sidebar.error("Arquivo Excel não encontrado automaticamente. Coloque o arquivo .xlsx na mesma pasta do app ou atualize o caminho em EXCEL_POSSIBLE_PATHS no código.")
     st.stop()
