@@ -7,7 +7,7 @@ from st_aggrid import AgGrid, GridOptionsBuilder
 from PIL import Image
 import base64
 import io 
-import os # Importação necessária para diagnosticar o caminho
+import os 
 
 st.set_page_config(
     page_title="MONETIZAÇÃO BATALHÃO POTENGI - 4º BPM PMRN", page_icon="brasao.jpg",
@@ -18,8 +18,8 @@ st.set_page_config(
 # ---------------------------
 # Config / assets
 # ---------------------------
-# DEFINIÇÃO DO CAMINHO DO ARQUIVO EXCEL
-EXCEL_DATA_PATH = "Tabela_Monetizacao_4_BPM_PM_RN.xlsx"
+# CORREÇÃO CRÍTICA: Ajuste do nome do arquivo para corresponder ao que está no disco (com espaço)
+EXCEL_DATA_PATH = "Tabela_Monetizacao_4 BPM_PM_RN.xlsx"
 BRASAO_PATH = "brasao.jpg" 
 
 # Monetization mapping (usado para cálculo de valor)
@@ -50,7 +50,7 @@ MONET_MAP = {
     "Dinheiro apreendido": ( "R$", 1.0 ),
 }
 
-# CRIAÇÃO DO MAPA DE CATEGORIAS (restante do código...)
+# CRIAÇÃO DO MAPA DE CATEGORIAS
 CATEGORY_MAPPING = {
     'Artesanal Curta': 'Armas - Revólver Artesanal',
     'Revólver': 'Armas - Revólver',
@@ -82,6 +82,7 @@ def find_column(df, candidates):
     cols = df.columns
     for c in candidates:
         for col in cols:
+            # Tolerância a espaços e case-insensitive
             if c.lower() == col.strip().lower() or c.lower() in col.strip().lower():
                 return col
     return None
@@ -128,90 +129,50 @@ def compute_monetized(df, cat_col, qty_col):
 # Função de Carregamento de Dados (LENDO O ARQUIVO EXCEL DO DISCO)
 @st.cache_data(show_spinner="Carregando e processando dados da base...")
 def load_data(path):
-    # 1. TENTA LER O ARQUIVO EXCEL DO DISCO
     try:
-        # Usa openpyxl para ler o arquivo .xlsx. Assume que os dados estão na primeira aba (sheet_name=0).
+        # Tenta ler a primeira aba (índice 0)
         df_raw = pd.read_excel(path, engine='openpyxl', sheet_name=0)
-        return df_raw
     except FileNotFoundError:
-        return None # Retorna None se o arquivo não for encontrado
+        # Se falhar, exibe a mensagem de erro original, sem o bloco de diagnóstico
+        st.error(f"Arquivo de dados Excel '{path}' não encontrado. Verifique se o nome do arquivo corresponde EXATAMENTE ao nome no código.")
+        return None
     except ImportError:
         st.error("A biblioteca 'openpyxl' é necessária para ler arquivos .xlsx. Por favor, instale-a usando: `pip install openpyxl`.")
         return None
     except Exception as e:
-        st.error(f"Erro na leitura do arquivo Excel. Verifique a estrutura das abas (sheets): {e}")
+        st.error(f"Erro na leitura ou processamento do arquivo Excel: {e}")
         return None
 
+    # 2. NORMALIZAR COLUNAS (remover espaços)
+    col_map = {c: c.strip() for c in df_raw.columns}
+    df_raw.rename(columns=col_map, inplace=True)
+
+    # 3. DETECTAR COLUNAS IMPORTANTES
+    col_date = find_column(df_raw, ["Data"])
+    col_cat  = find_column(df_raw, ["Categoria"])
+    col_qty  = find_column(df_raw, ["Qtde", "Quantidade"])
+
+    if col_date is None or col_cat is None or col_qty is None:
+        st.error("Colunas essenciais (Data, Categoria ou Qtde/Quantidade) não foram encontradas na tabela. Verifique se os nomes das colunas estão corretos ou se a aba de dados não é a primeira.")
+        return None
+
+    # 4. PREPARAÇÃO E CÁLCULO
+    df = df_raw.copy()
+    df = ensure_datetime(df, col_date)
+    df = df[~df[col_date].isna()].copy()
+    df = compute_monetized(df, col_cat, col_qty)
+
+    return df, col_date, col_cat, col_qty
 
 # ---------------------------
 # Load data (CHAMADA DA FUNÇÃO COM CACHE)
 # ---------------------------
-df_raw = load_data(EXCEL_DATA_PATH)
+result = load_data(EXCEL_DATA_PATH)
 
-# Variáveis para armazenar o DataFrame final e os nomes das colunas
-df = None
-col_date = None
-col_cat = None
-col_qty = None
-
-if df_raw is not None:
-    try:
-        # 2. NORMALIZAR COLUNAS (remover espaços)
-        col_map = {c: c.strip() for c in df_raw.columns}
-        df_raw.rename(columns=col_map, inplace=True)
-
-        # 3. DETECTAR COLUNAS IMPORTANTES
-        col_date = find_column(df_raw, ["Data"])
-        col_cat  = find_column(df_raw, ["Categoria"])
-        col_qty  = find_column(df_raw, ["Qtde", "Quantidade"])
-
-        if col_date is None or col_cat is None or col_qty is None:
-            st.error("Colunas essenciais (Data, Categoria ou Qtde/Quantidade) não foram encontradas na tabela. Verifique se os nomes das colunas estão corretos.")
-        else:
-            # 4. PREPARAÇÃO E CÁLCULO
-            df = df_raw.copy()
-            df = ensure_datetime(df, col_date)
-            df = df[~df[col_date].isna()].copy()
-            df = compute_monetized(df, col_cat, col_qty)
-            
-    except Exception as e:
-        st.error(f"Erro no processamento dos dados após a leitura: {e}")
-
-
-# ---------------------------
-# Title + description + criteria block
-# ---------------------------
-# (O código de estilo e título permanece o mesmo, por brevidade, não será repetido aqui)
-# ... (Código de estilo e título) ...
-
-# Bloco de diagnóstico de arquivo (SÓ APARECE SE O ARQUIVO NÃO FOR ENCONTRADO)
-if df is None:
-    st.markdown("---")
-    st.markdown("<h3 style='color:red;'>⚠️ ERRO: Arquivo de Dados Não Encontrado ou Inválido</h3>", unsafe_allow_html=True)
-    st.error(f"O Streamlit não conseguiu localizar o arquivo '{EXCEL_DATA_PATH}'.")
-    
-    # Dicas de Diagnóstico
-    st.markdown("#### **Passos de Diagnóstico para `FileNotFoundError`:**")
-    
-    try:
-        current_dir = os.getcwd()
-        st.markdown(f"1. **Diretório de Trabalho Atual (CWD):** O aplicativo está procurando o arquivo em: `{current_dir}`")
-        
-        files_in_dir = os.listdir(current_dir)
-        # Filtra e lista arquivos relevantes (excluindo os específicos do Streamlit/cache)
-        relevant_files = [f for f in files_in_dir if not f.startswith('.') and f != '__pycache__']
-        
-        st.markdown(f"2. **Arquivos Visíveis no CWD:** Os arquivos encontrados nesta pasta são: `{', '.join(relevant_files)}`")
-        
-        if EXCEL_DATA_PATH not in relevant_files:
-             st.warning(f"**Ação Necessária:** O arquivo `{EXCEL_DATA_PATH}` **não** está listado. Por favor, **mova o arquivo Excel para o diretório** acima ou ajuste a constante `EXCEL_DATA_PATH` com o caminho correto.")
-        else:
-             st.info(f"O arquivo `{EXCEL_DATA_PATH}` está listado, mas o erro persiste. Verifique se o nome da aba (sheet) no Excel é o primeiro (índice 0).")
-        
-    except Exception as e:
-        st.warning(f"Não foi possível listar arquivos para diagnóstico: {e}")
-        
+if result is None:
     st.stop()
+    
+df, col_date, col_cat, col_qty = result
 
 
 # ---------------------------
@@ -225,9 +186,6 @@ with st.sidebar:
         st.experimental_rerun() # Re-executa o script
         
     st.markdown("---")
-    
-    # O restante do código da sidebar (filtros) só é executado se df não for None.
-    # ... (Código da Sidebar) ...
     
     # Tenta carregar a imagem do brasão
     try:
@@ -262,8 +220,10 @@ with st.sidebar:
 
 
 # ---------------------------
-# Title + description + criteria block (repetido para garantir a ordem de visualização)
+# Title + description + criteria block
 # ---------------------------
+
+# Background image styling (institucional, translúcido) e remoção de ícones fork/github/menu
 def get_base64_image(img_path):
     try:
         with open(img_path, "rb") as img_file:
@@ -324,9 +284,6 @@ st.markdown("---")
 # ---------------------------
 # Filtering & Dashboard
 # ---------------------------
-
-# O restante do código só é executado se o df foi carregado com sucesso (df is not None)
-# Como o bloco de erro no topo contém st.stop(), se chegamos aqui, df é válido.
 
 start_dt = pd.to_datetime(start_date)
 end_dt   = pd.to_datetime(end_date) + pd.Timedelta(hours=23, minutes=59, seconds=59)
