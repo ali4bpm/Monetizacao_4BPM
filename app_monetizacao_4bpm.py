@@ -6,6 +6,7 @@ from datetime import timedelta
 from st_aggrid import AgGrid, GridOptionsBuilder
 from PIL import Image
 import base64
+import io # Importação necessária para ler o CSV como string
 
 st.set_page_config(
     page_title="MONETIZAÇÃO BATALHÃO POTENGI - 4º BPM PMRN", page_icon="brasao.jpg",
@@ -16,9 +17,115 @@ st.set_page_config(
 # ---------------------------
 # Config / assets
 # ---------------------------
-# Novo caminho para o arquivo CSV que contém os dados da aba 'Base_Monetização'
-CSV_DATA_PATH = "Tabela_Monetizacao_4 BPM_PM_RN.xlsx - Base_Monetização.csv"
-BRASAO_PATH = "brasao.jpg"  # imagem enviada por você
+# Novo caminho: Agora, esta variável contém o CONTEÚDO do CSV em formato string.
+CSV_DATA_CONTENT = """Data,Categoria,Unidade de Medida,Custo Unitário (R$),Qtde,Custo Total (R$)
+2025-09-01,Artesanal Curta,Unidade,500,5,2500
+2025-09-03,Artesanal Curta,Unidade,500,1,500
+2025-09-03,Munição,Unidade,15,3,45
+2025-09-03,Maconha,Kg,2168.4,0.09,195.156
+2025-09-03,Cloridrato de cocaína,Kg,180000,0.03,5400
+2025-09-04,Maconha,Kg,2168.4,0.09,195.156
+2025-09-04,Cloridrato de cocaína,Kg,180000,0.05,9000
+2025-09-04,Motocicletas,Unidade,18889.78,1,18889.78
+2025-09-07,Artesanal Curta,Unidade,500,1,500
+2025-09-07,Munição,Unidade,15,17,255
+2025-09-09,Revólver,Unidade,3000,1,3000
+2025-09-09,Munição,Unidade,15,1,15
+2025-09-10,Cloridrato de cocaína,Kg,180000,0.017,3060
+2025-09-10,Crack,Kg,20000,0.02,400
+2025-09-10,Revólver,Unidade,3000,1,3000
+2025-09-10,Munição,Unidade,15,1,15
+2025-09-12,Munição,Unidade,15,28,420
+2025-09-12,Revólver,Unidade,3000,1,3000
+2025-09-12,Pistola,Unidade,5000,1,5000
+2025-09-12,Veículos de passeio,Unidade,55092.43,1,55092.43
+2025-09-13,Maconha,Kg,2168.4,17.1,37079.640000000007
+2025-09-13,Crack,Kg,20000,0.5,10000
+2025-09-13,Cloridrato de cocaína,Kg,180000,0.51,91800
+2025-09-14,Veículos de passeio,Unidade,55092.43,1,55092.43
+2025-09-17,Cloridrato de cocaína,Kg,180000,0.015,2700
+2025-09-18,Maconha,Kg,2168.4,0.034,73.725600000000014
+2025-09-19,Maconha,Kg,2168.4,0.067,145.2828
+2025-09-19,Crack,Kg,20000,0.007,140
+2025-09-19,Cloridrato de cocaína,Kg,180000,0.031,5580
+2025-09-19,Revólver,Unidade,3000,1,3000
+2025-09-19,Dinheiro apreendido,R$,32.3,1,32.3
+2025-09-19,Munição,Unidade,15,12,180
+2025-09-22,Revólver,Unidade,3000,1,3000
+2025-09-22,Munição,Unidade,15,5,75
+2025-09-22,Veículos de passeio,Unidade,55092.43,1,55092.43
+2025-09-23,Crack,Kg,20000,0.054,1080
+2025-09-24,Cloridrato de cocaína,Kg,180000,0.004,720
+2025-09-24,Revólver,Unidade,3000,2,6000
+2025-09-24,Dinheiro apreendido,R$,1,40,40
+2025-09-24,Munição,Unidade,15,8,120
+2025-09-24,Motocicletas,Unidade,18889.78,1,18889.78
+2025-09-25,Maconha,Kg,2168.4,0.157,340.4388
+2025-09-25,Crack,Kg,20000,0.225,4500
+2025-09-25,Cloridrato de cocaína,Kg,180000,0.03,5400
+2025-09-25,Revólver,Unidade,3000,1,3000
+2025-09-25,Munição,Unidade,15,6,90
+2025-09-26,Dinheiro apreendido,R$,1,108.15,108.15
+2025-09-26,Maconha,Kg,2168.4,0.106,229.8504
+2025-09-27,Maconha,Kg,2168.4,2.036,4414.8624
+2025-09-27,Crack,Kg,20000,0.042,840
+2025-09-27,Cloridrato de cocaína,Kg,180000,0.006,1080
+2025-09-27,Artesanal Longa,Unidade,600,1,600
+2025-09-27,Munição,Unidade,15,1,15
+2025-09-30,Revólver,Unidade,3000,1,3000
+2025-09-30,Munição,Unidade,15,1,15
+2025-09-30,Crack,Kg,20000,0.001,20
+2025-10-01,Dinheiro apreendido,R$,1,76,76
+2025-10-01,Motocicletas,Unidade,18889.78,1,18889.78
+2025-10-01,Maconha,Kg,2168.4,0.026,56.3784
+2025-10-02,Dinheiro apreendido,R$,1,85.6,85.6
+2025-10-02,Maconha,Kg,2168.4,0.036,78.0624
+2025-10-03,Veículos de passeio,Unidade,55092.43,1,55092.43
+2025-10-03,Motocicletas,Unidade,18889.78,1,18889.78
+2025-10-03,Maconha,Kg,2168.4,0.09,195.156
+2025-10-04,Dinheiro apreendido,R$,1,500,500
+2025-10-04,Maconha,Kg,2168.4,0.023,49.873200000000004
+2025-10-04,Crack,Kg,20000,0.036,720
+2025-10-04,Cloridrato de cocaína,Kg,180000,0.09,16200
+2025-10-05,Dinheiro apreendido,R$,1,162,162
+2025-10-05,Pistola,Unidade,5000,1,5000
+2025-10-05,Munição,Unidade,15,26,390
+2025-10-05,Maconha,Kg,2168.4,1.092,2367.8928
+2025-10-07,Munição,Unidade,15,26,390
+2025-10-07,Maconha,Kg,2168.4,0.072,156.1248
+2025-10-07,Cloridrato de cocaína,Kg,180000,0.017,3060
+2025-10-09,Metralhadora e Submetralhadora,Unidade,30000,1,30000
+2025-10-09,Munição,Unidade,15,8,120
+2025-10-09,Cloridrato de cocaína,Kg,180000,0.6,108000
+2025-10-10,Dinheiro apreendido,R$,1,370,370
+2025-10-10,Motocicletas,Unidade,18889.78,1,18889.78
+2025-10-10,Maconha,Kg,2168.4,0.04,86.736
+2025-10-10,Crack,Kg,20000,0.032,640
+2025-10-10,Cloridrato de cocaína,Kg,180000,0.03,5400
+2025-10-11,Dinheiro apreendido,R$,1,27,27
+2025-10-11,Artesanal Curta,Unidade,500,1,500
+2025-10-11,Maconha,Kg,2168.4,0.103,223.3452
+2025-10-11,Crack,Kg,20000,0.001,20
+2025-10-11,Cloridrato de cocaína,Kg,180000,0.02,3600
+2025-10-12,Dinheiro apreendido,R$,1,50,50
+2025-10-12,Artesanal Curta,Unidade,500,2,1000
+2025-10-12,Munição,Unidade,15,2,30
+2025-10-12,Maconha,Kg,2168.4,0.043,93.241199999999992
+2025-10-12,Cloridrato de cocaína,Kg,180000,0.008,1440
+2025-10-13,Maconha,Kg,2168.4,0.03,65.052
+2025-10-14,Motocicletas,Unidade,18889.78,1,18889.78
+2025-10-14,Maconha,Kg,2168.4,0.041,88.90440000000001
+2025-10-14,Cloridrato de cocaína,Kg,180000,0.035,6300.0000000000009
+2025-10-15,Dinheiro apreendido,R$,1,46,46
+2025-10-15,Revólver,Unidade,3000,1,3000
+2025-10-15,Munição,Unidade,15,4,60
+2025-10-15,Cloridrato de cocaína,Kg,180000,0.11,19800
+2025-10-16,Dinheiro apreendido,R$,1,143.75,143.75
+2025-10-16,Maconha,Kg,2168.4,0.003,6.5052
+2025-10-16,Crack,Kg,20000,0.002,40
+2025-10-16,Cloridrato de cocaína,Kg,180000,0.003,540
+"""
+BRASAO_PATH = "brasao.jpg" 
 
 # Monetization mapping (usado para cálculo de valor)
 MONET_MAP = {
@@ -48,10 +155,7 @@ MONET_MAP = {
     "Dinheiro apreendido": ( "R$", 1.0 ),
 }
 
-# CRIAÇÃO DO MAPA DE CATEGORIAS (Corrigido o SyntaxError)
-# O objetivo é mapear o nome da categoria no DF (ex: 'Pistola') para o nome no MONET_MAP (ex: 'Armas - Pistola').
-
-# Mapeamento explícito (para nomes que mudam no DF)
+# CRIAÇÃO DO MAPA DE CATEGORIAS (Corrigido para incluir 'Artesanal Longa')
 CATEGORY_MAPPING = {
     'Artesanal Curta': 'Armas - Revólver Artesanal',
     'Revólver': 'Armas - Revólver',
@@ -61,24 +165,23 @@ CATEGORY_MAPPING = {
     'Espingarda': 'Armas - Espingarda',
     'Espingarda Artesanal': 'Armas - Espingarda Artesanal',
     'Carabina': 'Armas - Carabina',
-    'Munição': 'Munições', # 'Munição' (do DF) para 'Munições' (do MONET_MAP)
-    'Dinheiro apreendido': 'Dinheiro apreendido' # Para garantir que o nome da categoria no DF seja tratado corretamente
+    'Munição': 'Munições', 
+    'Dinheiro apreendido': 'Dinheiro apreendido',
+    # NOVO: Mapeando "Artesanal Longa" para "Espingarda Artesanal"
+    'Artesanal Longa': 'Armas - Espingarda Artesanal',
 }
 
 # Adiciona o mapeamento para categorias de 'Armas' usando a parte do nome após "Armas - "
-# Isto garante que 'Pistola' (se aparecer no DF) seja mapeado para 'Armas - Pistola'
 armas_auto = {
     k.split("Armas - ")[-1]: k for k in MONET_MAP.keys() if k.startswith("Armas - ")
 }
 CATEGORY_MAPPING.update(armas_auto)
 
 # Adiciona o mapeamento para as outras categorias que mapeiam para si mesmas
-# Ex: 'Maconha' -> 'Maconha'
 outras_auto = {
-    k: k for k in MONET_MAP.keys() if not k.startswith("Armas - ")
+    k: k for k in MONET_MAP.keys() if not k.startswith("Armas - ") and k != "Munições"
 }
 CATEGORY_MAPPING.update(outras_auto)
-# O mapeamento explícito tem prioridade sobre os automáticos.
 
 # ---------------------------
 # Helpers
@@ -88,7 +191,6 @@ def find_column(df, candidates):
     cols = df.columns
     for c in candidates:
         for col in cols:
-            # Match exato ou match parcial case-insensitive após limpeza de espaço
             if c.lower() == col.strip().lower() or c.lower() in col.strip().lower():
                 return col
     return None
@@ -106,10 +208,8 @@ def normalize_category(cat):
 
 
 def compute_monetized(df, cat_col, qty_col):
-    # Aplica a normalização da categoria ANTES do cálculo
     df['__CATEGORIA_NORMALIZADA'] = df[cat_col].apply(normalize_category)
     
-    # Create monet_value column
     def monet_value(row):
         cat = row.get('__CATEGORIA_NORMALIZADA')
         qty = row.get(qty_col)
@@ -117,32 +217,35 @@ def compute_monetized(df, cat_col, qty_col):
         if pd.isna(qty) or qty == "":
             return 0.0
         try:
-            # A coluna Qtde no seu DF é lida como float, mas garantimos
             qty_num = float(qty)
         except:
             return 0.0
+        
+        if cat == 'Dinheiro apreendido':
+             # Para dinheiro apreendido, a quantidade (Qtde) é o valor monetário, 
+             # e o custo unitário (MONET_MAP) é 1.0, então é apenas a quantidade.
+             return qty_num
         
         # get unit cost
         if cat in MONET_MAP:
             unit_cost = MONET_MAP[cat][1]
         else:
-            # Fallback para categorias não mapeadas (deve ser 0.0)
             unit_cost = 0.0
             
         return qty_num * unit_cost
         
     df["_VALOR_MONETIZADO"] = df.apply(monet_value, axis=1)
-    return df.drop(columns=['__CATEGORIA_NORMALIZADA']) # Remove a coluna auxiliar
+    return df.drop(columns=['__CATEGORIA_NORMALIZADA'])
 
 # ---------------------------
-# Load data
+# Load data (CORRIGIDO PARA LER O CONTEÚDO DA STRING)
 # ---------------------------
 
 try:
-    # Lendo o arquivo CSV que representa a aba 'Base_Monetização'
-    df_raw = pd.read_csv(CSV_DATA_PATH)
+    # Lê o conteúdo da string como se fosse um arquivo
+    df_raw = pd.read_csv(io.StringIO(CSV_DATA_CONTENT))
 except Exception as e:
-    st.sidebar.error(f"Arquivo de dados CSV '{CSV_DATA_PATH}' não encontrado ou erro na leitura: {e}")
+    st.sidebar.error(f"Erro na leitura dos dados internos: {e}")
     st.stop()
 
 # normalizar colunas (remover espaços)
@@ -222,7 +325,6 @@ def get_base64_image(img_path):
         with open(img_path, "rb") as img_file:
             return base64.b64encode(img_file.read()).decode()
     except FileNotFoundError:
-        # Se o brasão não for encontrado, usa uma imagem placeholder
         return "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
 
 BRASAO_BASE64 = get_base64_image(BRASAO_PATH)
@@ -356,13 +458,11 @@ else:
     # ---------------------------
     st.subheader("Visualização 3D — Valor monetizado por categoria")
 
-    # for plotly 3D we create x (index), y (zeros), z (values) and draw as 3D bars via scatter with lines
     x = group[col_cat].astype(str)
     z = group["VALOR_MONETIZADO"].values
     perc = group["% do Valor"].values
     y = np.zeros(len(x))
 
-    # Create 3D bar-like using markers with vertical lines to 'simulate' bars.
     fig = go.Figure()
     for i, (xi, yi, zi, pi) in enumerate(zip(x, y, z, perc)):
         fig.add_trace(go.Scatter3d(
