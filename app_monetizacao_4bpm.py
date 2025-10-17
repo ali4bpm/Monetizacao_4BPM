@@ -58,7 +58,7 @@ MONET_MAP = {
 def try_load_excel(EXCEL_POSSIBLE_PATHS):
     for p in EXCEL_POSSIBLE_PATHS:
         try:
-            df = pd.read_excel(p, sheet_name="Base_Monetização")  # read all sheets
+            df = pd.read_excel(Tabela_Monetizacao_4 BPM_PM_RN.xlsx, sheet_name="Base_Monetização")  # read all sheets
             return p, df
         except Exception as e:
             continue
