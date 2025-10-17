@@ -6,7 +6,7 @@ from datetime import timedelta
 from st_aggrid import AgGrid, GridOptionsBuilder
 from PIL import Image
 import base64
-import io # Importação necessária para ler o CSV como string
+import io 
 
 st.set_page_config(
     page_title="MONETIZAÇÃO BATALHÃO POTENGI - 4º BPM PMRN", page_icon="brasao.jpg",
@@ -17,114 +17,9 @@ st.set_page_config(
 # ---------------------------
 # Config / assets
 # ---------------------------
-# Novo caminho: Agora, esta variável contém o CONTEÚDO do CSV em formato string.
-CSV_DATA_CONTENT = """Data,Categoria,Unidade de Medida,Custo Unitário (R$),Qtde,Custo Total (R$)
-2025-09-01,Artesanal Curta,Unidade,500,5,2500
-2025-09-03,Artesanal Curta,Unidade,500,1,500
-2025-09-03,Munição,Unidade,15,3,45
-2025-09-03,Maconha,Kg,2168.4,0.09,195.156
-2025-09-03,Cloridrato de cocaína,Kg,180000,0.03,5400
-2025-09-04,Maconha,Kg,2168.4,0.09,195.156
-2025-09-04,Cloridrato de cocaína,Kg,180000,0.05,9000
-2025-09-04,Motocicletas,Unidade,18889.78,1,18889.78
-2025-09-07,Artesanal Curta,Unidade,500,1,500
-2025-09-07,Munição,Unidade,15,17,255
-2025-09-09,Revólver,Unidade,3000,1,3000
-2025-09-09,Munição,Unidade,15,1,15
-2025-09-10,Cloridrato de cocaína,Kg,180000,0.017,3060
-2025-09-10,Crack,Kg,20000,0.02,400
-2025-09-10,Revólver,Unidade,3000,1,3000
-2025-09-10,Munição,Unidade,15,1,15
-2025-09-12,Munição,Unidade,15,28,420
-2025-09-12,Revólver,Unidade,3000,1,3000
-2025-09-12,Pistola,Unidade,5000,1,5000
-2025-09-12,Veículos de passeio,Unidade,55092.43,1,55092.43
-2025-09-13,Maconha,Kg,2168.4,17.1,37079.640000000007
-2025-09-13,Crack,Kg,20000,0.5,10000
-2025-09-13,Cloridrato de cocaína,Kg,180000,0.51,91800
-2025-09-14,Veículos de passeio,Unidade,55092.43,1,55092.43
-2025-09-17,Cloridrato de cocaína,Kg,180000,0.015,2700
-2025-09-18,Maconha,Kg,2168.4,0.034,73.725600000000014
-2025-09-19,Maconha,Kg,2168.4,0.067,145.2828
-2025-09-19,Crack,Kg,20000,0.007,140
-2025-09-19,Cloridrato de cocaína,Kg,180000,0.031,5580
-2025-09-19,Revólver,Unidade,3000,1,3000
-2025-09-19,Dinheiro apreendido,R$,32.3,1,32.3
-2025-09-19,Munição,Unidade,15,12,180
-2025-09-22,Revólver,Unidade,3000,1,3000
-2025-09-22,Munição,Unidade,15,5,75
-2025-09-22,Veículos de passeio,Unidade,55092.43,1,55092.43
-2025-09-23,Crack,Kg,20000,0.054,1080
-2025-09-24,Cloridrato de cocaína,Kg,180000,0.004,720
-2025-09-24,Revólver,Unidade,3000,2,6000
-2025-09-24,Dinheiro apreendido,R$,1,40,40
-2025-09-24,Munição,Unidade,15,8,120
-2025-09-24,Motocicletas,Unidade,18889.78,1,18889.78
-2025-09-25,Maconha,Kg,2168.4,0.157,340.4388
-2025-09-25,Crack,Kg,20000,0.225,4500
-2025-09-25,Cloridrato de cocaína,Kg,180000,0.03,5400
-2025-09-25,Revólver,Unidade,3000,1,3000
-2025-09-25,Munição,Unidade,15,6,90
-2025-09-26,Dinheiro apreendido,R$,1,108.15,108.15
-2025-09-26,Maconha,Kg,2168.4,0.106,229.8504
-2025-09-27,Maconha,Kg,2168.4,2.036,4414.8624
-2025-09-27,Crack,Kg,20000,0.042,840
-2025-09-27,Cloridrato de cocaína,Kg,180000,0.006,1080
-2025-09-27,Artesanal Longa,Unidade,600,1,600
-2025-09-27,Munição,Unidade,15,1,15
-2025-09-30,Revólver,Unidade,3000,1,3000
-2025-09-30,Munição,Unidade,15,1,15
-2025-09-30,Crack,Kg,20000,0.001,20
-2025-10-01,Dinheiro apreendido,R$,1,76,76
-2025-10-01,Motocicletas,Unidade,18889.78,1,18889.78
-2025-10-01,Maconha,Kg,2168.4,0.026,56.3784
-2025-10-02,Dinheiro apreendido,R$,1,85.6,85.6
-2025-10-02,Maconha,Kg,2168.4,0.036,78.0624
-2025-10-03,Veículos de passeio,Unidade,55092.43,1,55092.43
-2025-10-03,Motocicletas,Unidade,18889.78,1,18889.78
-2025-10-03,Maconha,Kg,2168.4,0.09,195.156
-2025-10-04,Dinheiro apreendido,R$,1,500,500
-2025-10-04,Maconha,Kg,2168.4,0.023,49.873200000000004
-2025-10-04,Crack,Kg,20000,0.036,720
-2025-10-04,Cloridrato de cocaína,Kg,180000,0.09,16200
-2025-10-05,Dinheiro apreendido,R$,1,162,162
-2025-10-05,Pistola,Unidade,5000,1,5000
-2025-10-05,Munição,Unidade,15,26,390
-2025-10-05,Maconha,Kg,2168.4,1.092,2367.8928
-2025-10-07,Munição,Unidade,15,26,390
-2025-10-07,Maconha,Kg,2168.4,0.072,156.1248
-2025-10-07,Cloridrato de cocaína,Kg,180000,0.017,3060
-2025-10-09,Metralhadora e Submetralhadora,Unidade,30000,1,30000
-2025-10-09,Munição,Unidade,15,8,120
-2025-10-09,Cloridrato de cocaína,Kg,180000,0.6,108000
-2025-10-10,Dinheiro apreendido,R$,1,370,370
-2025-10-10,Motocicletas,Unidade,18889.78,1,18889.78
-2025-10-10,Maconha,Kg,2168.4,0.04,86.736
-2025-10-10,Crack,Kg,20000,0.032,640
-2025-10-10,Cloridrato de cocaína,Kg,180000,0.03,5400
-2025-10-11,Dinheiro apreendido,R$,1,27,27
-2025-10-11,Artesanal Curta,Unidade,500,1,500
-2025-10-11,Maconha,Kg,2168.4,0.103,223.3452
-2025-10-11,Crack,Kg,20000,0.001,20
-2025-10-11,Cloridrato de cocaína,Kg,180000,0.02,3600
-2025-10-12,Dinheiro apreendido,R$,1,50,50
-2025-10-12,Artesanal Curta,Unidade,500,2,1000
-2025-10-12,Munição,Unidade,15,2,30
-2025-10-12,Maconha,Kg,2168.4,0.043,93.241199999999992
-2025-10-12,Cloridrato de cocaína,Kg,180000,0.008,1440
-2025-10-13,Maconha,Kg,2168.4,0.03,65.052
-2025-10-14,Motocicletas,Unidade,18889.78,1,18889.78
-2025-10-14,Maconha,Kg,2168.4,0.041,88.90440000000001
-2025-10-14,Cloridrato de cocaína,Kg,180000,0.035,6300.0000000000009
-2025-10-15,Dinheiro apreendido,R$,1,46,46
-2025-10-15,Revólver,Unidade,3000,1,3000
-2025-10-15,Munição,Unidade,15,4,60
-2025-10-15,Cloridrato de cocaína,Kg,180000,0.11,19800
-2025-10-16,Dinheiro apreendido,R$,1,143.75,143.75
-2025-10-16,Maconha,Kg,2168.4,0.003,6.5052
-2025-10-16,Crack,Kg,20000,0.002,40
-2025-10-16,Cloridrato de cocaína,Kg,180000,0.003,540
-"""
+# ALTERADO PARA LER O ARQUIVO REAL (ASSUMINDO QUE ELE ESTÁ NA PASTA)
+# Você precisará salvar o conteúdo do seu CSV no arquivo com este nome.
+CSV_DATA_PATH = "Tabela_Monetizacao_4 BPM_PM_RN.xlsx - Base_Monetização.csv"
 BRASAO_PATH = "brasao.jpg" 
 
 # Monetization mapping (usado para cálculo de valor)
@@ -155,7 +50,7 @@ MONET_MAP = {
     "Dinheiro apreendido": ( "R$", 1.0 ),
 }
 
-# CRIAÇÃO DO MAPA DE CATEGORIAS (Corrigido para incluir 'Artesanal Longa')
+# CRIAÇÃO DO MAPA DE CATEGORIAS
 CATEGORY_MAPPING = {
     'Artesanal Curta': 'Armas - Revólver Artesanal',
     'Revólver': 'Armas - Revólver',
@@ -167,17 +62,14 @@ CATEGORY_MAPPING = {
     'Carabina': 'Armas - Carabina',
     'Munição': 'Munições', 
     'Dinheiro apreendido': 'Dinheiro apreendido',
-    # NOVO: Mapeando "Artesanal Longa" para "Espingarda Artesanal"
     'Artesanal Longa': 'Armas - Espingarda Artesanal',
 }
 
-# Adiciona o mapeamento para categorias de 'Armas' usando a parte do nome após "Armas - "
 armas_auto = {
     k.split("Armas - ")[-1]: k for k in MONET_MAP.keys() if k.startswith("Armas - ")
 }
 CATEGORY_MAPPING.update(armas_auto)
 
-# Adiciona o mapeamento para as outras categorias que mapeiam para si mesmas
 outras_auto = {
     k: k for k in MONET_MAP.keys() if not k.startswith("Armas - ") and k != "Munições"
 }
@@ -186,7 +78,41 @@ CATEGORY_MAPPING.update(outras_auto)
 # ---------------------------
 # Helpers
 # ---------------------------
+# Função de Carregamento de Dados (AGORA COM CACHE)
+@st.cache_data(show_spinner="Carregando e processando dados da base...")
+def load_data(path):
+    # 1. TENTA LER O ARQUIVO CSV DO DISCO
+    try:
+        df_raw = pd.read_csv(path)
+    except FileNotFoundError:
+        st.error(f"Arquivo de dados CSV '{path}' não encontrado. Por favor, verifique o caminho.")
+        return None
+    except Exception as e:
+        st.error(f"Erro na leitura do arquivo CSV: {e}")
+        return None
 
+    # 2. NORMALIZAR COLUNAS (remover espaços)
+    col_map = {c: c.strip() for c in df_raw.columns}
+    df_raw.rename(columns=col_map, inplace=True)
+
+    # 3. DETECTAR COLUNAS IMPORTANTES
+    col_date = find_column(df_raw, ["Data"])
+    col_cat  = find_column(df_raw, ["Categoria"])
+    col_qty  = find_column(df_raw, ["Qtde"])
+
+    if col_date is None or col_cat is None or col_qty is None:
+        st.error("Colunas essenciais (Data, Categoria ou Qtde) não foram encontradas.")
+        return None
+
+    # 4. PREPARAÇÃO E CÁLCULO
+    df = df_raw.copy()
+    df = ensure_datetime(df, col_date)
+    df = df[~df[col_date].isna()].copy()
+    df = compute_monetized(df, col_cat, col_qty)
+
+    return df, col_date, col_cat, col_qty
+
+# O resto das funções helpers permanecem o mesmo
 def find_column(df, candidates):
     cols = df.columns
     for c in candidates:
@@ -222,11 +148,8 @@ def compute_monetized(df, cat_col, qty_col):
             return 0.0
         
         if cat == 'Dinheiro apreendido':
-             # Para dinheiro apreendido, a quantidade (Qtde) é o valor monetário, 
-             # e o custo unitário (MONET_MAP) é 1.0, então é apenas a quantidade.
              return qty_num
         
-        # get unit cost
         if cat in MONET_MAP:
             unit_cost = MONET_MAP[cat][1]
         else:
@@ -238,51 +161,29 @@ def compute_monetized(df, cat_col, qty_col):
     return df.drop(columns=['__CATEGORIA_NORMALIZADA'])
 
 # ---------------------------
-# Load data (CORRIGIDO PARA LER O CONTEÚDO DA STRING)
+# Load data (CHAMADA DA FUNÇÃO COM CACHE)
 # ---------------------------
+# A chamada de função retornará o DF e os nomes das colunas
+result = load_data(CSV_DATA_PATH)
 
-try:
-    # Lê o conteúdo da string como se fosse um arquivo
-    df_raw = pd.read_csv(io.StringIO(CSV_DATA_CONTENT))
-except Exception as e:
-    st.sidebar.error(f"Erro na leitura dos dados internos: {e}")
+if result is None:
     st.stop()
+    
+df, col_date, col_cat, col_qty = result
 
-# normalizar colunas (remover espaços)
-col_map = {c: c.strip() for c in df_raw.columns}
-df_raw.rename(columns=col_map, inplace=True)
-
-
-# detect important columns
-col_date = find_column(df_raw, ["Data"])
-col_cat  = find_column(df_raw, ["Categoria"])
-col_qty  = find_column(df_raw, ["Qtde"])
-
-if col_date is None:
-    st.error("Não foi possível localizar a coluna de data (esperado: 'Data').")
-    st.stop()
-if col_cat is None:
-    st.error("Não foi possível localizar a coluna de categoria (esperado: 'Categoria').")
-    st.stop()
-if col_qty is None:
-    st.error("Não foi possível localizar a coluna de quantidade (esperado: 'Qtde').")
-    st.stop()
-
-
-# normalize date
-df = df_raw.copy()
-df = ensure_datetime(df, col_date)
-
-# drop rows sem data
-df = df[~df[col_date].isna()].copy()
-
-# compute monetized
-df = compute_monetized(df, col_cat, col_qty)
 
 # ---------------------------
 # Sidebar (image + filters)
 # ---------------------------
 with st.sidebar:
+    # BOTÃO DE ATUALIZAÇÃO (CORREÇÃO DO PROBLEMA)
+    st.markdown("---")
+    if st.button("🔄 Atualizar Dados da Base", type="primary"):
+        st.cache_data.clear() # Invalida o cache
+        st.experimental_rerun() # Re-executa o script
+        
+    st.markdown("---")
+    
     # Tenta carregar a imagem do brasão
     try:
         Image.open(BRASAO_PATH)
@@ -316,7 +217,7 @@ with st.sidebar:
 
 
 # ---------------------------
-# Title + description + criteria block
+# Title + description + criteria block (sem alteração)
 # ---------------------------
 
 # Background image styling (institucional, translúcido) e remoção de ícones fork/github/menu
