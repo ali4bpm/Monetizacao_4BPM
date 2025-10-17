@@ -56,8 +56,7 @@ MONET_MAP = {
 # Helpers
 # ---------------------------
 
-def try_load_excel(EXCEL_POSSIBLE_PATHS):
-   def try_load_excel(paths):
+def try_load_excel(paths):
     for p in paths:
         try:
             df = pd.read_excel(p, sheet_name=None)  # read all sheets
