@@ -57,7 +57,7 @@ MONET_MAP = {
 # ---------------------------
 
 def try_load_excel():
-    EXCEL_FILE_PATH = "Tabela_Monetizacao_4 BPM_PM_RN.xlsx
+    EXCEL_FILE_PATH = "Tabela_Monetizacao_4 BPM_PM_RN.xlsx"
     df = pd.read_excel(EXCEL_FILE_PATH, sheet_name="Base_Monetização")
     return df
 
