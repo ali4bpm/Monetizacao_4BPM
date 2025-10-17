@@ -60,7 +60,7 @@ def load_google_sheet_data(sheet_id, gid):
     """Carrega os dados diretamente do Google Sheets via URL de exportação CSV."""
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
     try:
-        # CORREÇÃO PRINCIPAL: sep=';' para campos e decimal=',' para números (formato brasileiro)
+        # CORREÇÃO DUPLA: sep=';' para campos e decimal=',' para números (formato brasileiro)
         df = pd.read_csv(url, decimal=',', sep=';')
         # Normaliza colunas
         df.columns = [col.strip() for col in df.columns]
@@ -80,8 +80,8 @@ def find_column(df, candidates):
     return None
 
 def ensure_datetime(df, col):
-    # Tenta forçar a conversão de datas.
-    df[col] = pd.to_datetime(df[col], errors='coerce', dayfirst=True) # Adicionado dayfirst=True para formato DD/MM/YYYY
+    # Tenta forçar a conversão de datas, assumindo o formato DD/MM/YYYY (dayfirst=True)
+    df[col] = pd.to_datetime(df[col], errors='coerce', dayfirst=True)
     return df
 
 def compute_monetized(df, cat_col, qty_col):
@@ -139,7 +139,6 @@ df = df_raw.copy()
 df = ensure_datetime(df, col_date)
 
 # CONVERSÃO ESSENCIAL: Converte a coluna de quantidade para numérico (float)
-# com errors='coerce' para lidar com strings e valores vazios, preenchendo-os com 0.
 df[col_qty] = pd.to_numeric(df[col_qty], errors='coerce').fillna(0)
 
 # drop rows sem data
@@ -161,10 +160,17 @@ with st.sidebar:
     # date range
     min_date = df[col_date].min()
     max_date = df[col_date].max()
+    
+    # CORREÇÃO PARA O TypeError: Checa a validade da data de forma separada antes de chamar .date()
     # Tratamento para min/max date que podem ser NaT
-    min_date_val = min_date.date() if pd.notna(min_date) else pd.to_datetime("2024-01-01").date()
-    max_date_val = max_date.date() if pd.notna(max_date) else pd.to_datetime("today").date()
+    min_date_val = pd.to_datetime("2024-01-01").date()
+    if pd.notna(min_date):
+        min_date_val = min_date.date()
 
+    max_date_val = pd.to_datetime("today").date()
+    if pd.notna(max_date):
+        max_date_val = max_date.date()
+        
     date_range = st.date_input(
         "Período",
         value=(min_date_val, max_date_val)
