@@ -21,7 +21,6 @@ CSV_DATA_PATH = "Tabela_Monetizacao_4 BPM_PM_RN.xlsx - Base_Monetização.csv"
 BRASAO_PATH = "brasao.jpg"  # imagem enviada por você
 
 # Monetization mapping (usado para cálculo de valor)
-# Este dicionário MONET_MAP simula a leitura da aba 'Critérios' do seu Excel.
 MONET_MAP = {
     "Maconha": ( "Kg", 2168.4 ),
     "Haxixe": ( "Kg", 12000.0 ),
@@ -48,8 +47,11 @@ MONET_MAP = {
     "Veículos pesados": ( "Unidade", 120980.0 ),
     "Dinheiro apreendido": ( "R$", 1.0 ),
 }
-# Cria um mapa de categorias que contêm "Armas" para mapear os nomes no seu dataframe de dados
-# (ex: 'Revólver' no DF é mapeado para 'Armas - Revólver' no MONET_MAP)
+
+# CRIAÇÃO DO MAPA DE CATEGORIAS (Corrigido o SyntaxError)
+# O objetivo é mapear o nome da categoria no DF (ex: 'Pistola') para o nome no MONET_MAP (ex: 'Armas - Pistola').
+
+# Mapeamento explícito (para nomes que mudam no DF)
 CATEGORY_MAPPING = {
     'Artesanal Curta': 'Armas - Revólver Artesanal',
     'Revólver': 'Armas - Revólver',
@@ -59,11 +61,24 @@ CATEGORY_MAPPING = {
     'Espingarda': 'Armas - Espingarda',
     'Espingarda Artesanal': 'Armas - Espingarda Artesanal',
     'Carabina': 'Armas - Carabina',
-    'Munição': 'Munições',
-    # Outras categorias mantêm o nome
+    'Munição': 'Munições', # 'Munição' (do DF) para 'Munições' (do MONET_MAP)
+    'Dinheiro apreendido': 'Dinheiro apreendido' # Para garantir que o nome da categoria no DF seja tratado corretamente
+}
+
+# Adiciona o mapeamento para categorias de 'Armas' usando a parte do nome após "Armas - "
+# Isto garante que 'Pistola' (se aparecer no DF) seja mapeado para 'Armas - Pistola'
+armas_auto = {
     k.split("Armas - ")[-1]: k for k in MONET_MAP.keys() if k.startswith("Armas - ")
 }
-CATEGORY_MAPPING.update({k:k for k in MONET_MAP.keys() if not k.startswith("Armas - ") and k != "Munições"})
+CATEGORY_MAPPING.update(armas_auto)
+
+# Adiciona o mapeamento para as outras categorias que mapeiam para si mesmas
+# Ex: 'Maconha' -> 'Maconha'
+outras_auto = {
+    k: k for k in MONET_MAP.keys() if not k.startswith("Armas - ")
+}
+CATEGORY_MAPPING.update(outras_auto)
+# O mapeamento explícito tem prioridade sobre os automáticos.
 
 # ---------------------------
 # Helpers
@@ -87,7 +102,6 @@ def normalize_category(cat):
     if pd.isna(cat):
         return cat
     cat_str = str(cat).strip()
-    # Tenta um mapeamento direto ou mapeamento com 'Armas'
     return CATEGORY_MAPPING.get(cat_str, cat_str)
 
 
@@ -100,13 +114,10 @@ def compute_monetized(df, cat_col, qty_col):
         cat = row.get('__CATEGORIA_NORMALIZADA')
         qty = row.get(qty_col)
         
-        # O nome da coluna no seu CSV é 'Custo Total (R$)', que é o valor final.
-        # Se você quiser usar a fórmula Qtde * Custo Unitário, use a lógica abaixo.
-        # Seu CSV já tem a coluna 'Custo Total (R$)', mas vou seguir a lógica de cálculo.
-        
         if pd.isna(qty) or qty == "":
             return 0.0
         try:
+            # A coluna Qtde no seu DF é lida como float, mas garantimos
             qty_num = float(qty)
         except:
             return 0.0
@@ -124,7 +135,7 @@ def compute_monetized(df, cat_col, qty_col):
     return df.drop(columns=['__CATEGORIA_NORMALIZADA']) # Remove a coluna auxiliar
 
 # ---------------------------
-# Load data (MODIFICADO PARA CSV)
+# Load data
 # ---------------------------
 
 try:
@@ -134,16 +145,15 @@ except Exception as e:
     st.sidebar.error(f"Arquivo de dados CSV '{CSV_DATA_PATH}' não encontrado ou erro na leitura: {e}")
     st.stop()
 
-# normalizar colunas
+# normalizar colunas (remover espaços)
 col_map = {c: c.strip() for c in df_raw.columns}
 df_raw.rename(columns=col_map, inplace=True)
 
 
 # detect important columns
-# Note que os nomes das colunas no seu CSV são: 'Data', 'Categoria', 'Qtde', 'Custo Unitário (R$)', 'Custo Total (R$)'
-col_date = find_column(df_raw, ["Data"]) # Deve encontrar 'Data'
-col_cat  = find_column(df_raw, ["Categoria"]) # Deve encontrar 'Categoria'
-col_qty  = find_column(df_raw, ["Qtde"]) # Deve encontrar 'Qtde'
+col_date = find_column(df_raw, ["Data"])
+col_cat  = find_column(df_raw, ["Categoria"])
+col_qty  = find_column(df_raw, ["Qtde"])
 
 if col_date is None:
     st.error("Não foi possível localizar a coluna de data (esperado: 'Data').")
@@ -164,13 +174,11 @@ df = ensure_datetime(df, col_date)
 df = df[~df[col_date].isna()].copy()
 
 # compute monetized
-# Usamos col_cat e col_qty, mas a coluna 'Categoria' será normalizada internamente para o cálculo
 df = compute_monetized(df, col_cat, col_qty)
 
 # ---------------------------
 # Sidebar (image + filters)
 # ---------------------------
-# ... o restante do código da sidebar permanece o mesmo
 with st.sidebar:
     # Tenta carregar a imagem do brasão
     try:
@@ -289,11 +297,6 @@ df_prev = df.loc[mask_prev].copy()
 if df_filt.empty:
     st.warning("Nenhum registro encontrado para os filtros selecionados.")
 else:
-    # O group by usa o 'col_cat' original, mas o cálculo de VALOR_MONETIZADO usou a categoria normalizada.
-    # Se quiser agrupar pela categoria normalizada, substitua col_cat por '__CATEGORIA_NORMALIZADA' no group_by,
-    # mas como a lógica de monetização já está na função compute_monetized,
-    # manterei o agrupamento pelo nome original para visualização na tabela de dados.
-    # Para o cálculo de valor correto, a lógica de compute_monetized é a que importa.
     
     group = df_filt.groupby(col_cat).agg(
         QUANTIDADE = (col_qty, "sum"),
@@ -310,28 +313,19 @@ else:
     group["QUANTIDADE"] = group["QUANTIDADE"].round(3)
 
 
-
     # Indicator: compare total_valor vs previous period
     prev_total_valor = df_prev["_VALOR_MONETIZADO"].sum() if not df_prev.empty else 0.0
     if prev_total_valor == 0 and total_valor == 0:
         delta_label = "Sem dados"
-        delta_pct = None
     else:
         delta_val = total_valor - prev_total_valor
-        if prev_total_valor == 0:
-            pct_change = np.nan
-        else:
-            pct_change = (delta_val / prev_total_valor) * 100
         delta_label = f"R$ {delta_val:,.2f}"
-        # A linha de delta que você usou no código original é: st.metric("Total Monetizado (R$)", f"R$ {total_valor:,.2f}", delta=delta_label, delta_color="normal")
-        # Essa linha só mostra a diferença (R$). Não precisa do delta_pct aqui.
 
     # Dashboard KPIs coloridos
     c1, c2, c3, c4 = st.columns([1.5,1.5,1,1])
     with c1:
         st.metric("Total Monetizado (R$)", f"R$ {total_valor:,.2f}", delta=delta_label, delta_color="normal")
     with c2:
-        # Se total_qtd não for um inteiro grande, melhor formatar com separador de milhar e casas decimais se necessário
         st.metric("Total Quantidade", f"{total_qtd:,.3f}") 
     with c3:
         st.metric("Registros", f"{len(df_filt)}")
@@ -344,7 +338,6 @@ else:
     # Tabela dinâmica interativa (AgGrid) - oculta colunas REGISTROS, % do Valor e % da Quantidade
     st.subheader("Tabela Monetização por Categoria")
     group_display = group.drop(columns=["REGISTROS", "% do Valor", "% da Quantidade"], errors="ignore")
-    # Configurações de formatação para R$ e Qtde
     
     gb = GridOptionsBuilder.from_dataframe(group_display.reset_index(drop=True))
     gb.configure_column("VALOR_MONETIZADO", valueFormatter='`R$ ` + value.toLocaleString("pt-BR", {minimumFractionDigits: 2, maximumFractionDigits: 2})')
@@ -399,7 +392,6 @@ else:
     st.subheader("Distribuição percentual (pizza)")
     pie = go.Figure(go.Pie(labels=group[col_cat].astype(str), values=group["VALOR_MONETIZADO"], hole=0.35,
                              hoverinfo="label+percent+value",
-                             # Usando o nome da categoria normalizada para hovertext, caso haja diferença
                              hovertemplate="%{label}<br>Valor: R$ %{value:,.2f}<br>Participação: %{percent}<extra></extra>"))
     pie.update_layout(height=450, margin=dict(l=0,r=0,t=30,b=0))
     st.plotly_chart(pie, use_container_width=True)
