@@ -17,6 +17,8 @@ st.set_page_config(
 # ---------------------------
 # Config / assets
 # ---------------------------
+# DEFINIÇÃO DO CAMINHO DO ARQUIVO EXCEL
+EXCEL_DATA_PATH = "Tabela_Monetizacao_4_BPM_PM_RN.xlsx"
 BRASAO_PATH = "brasao.jpg" 
 
 # Monetization mapping (usado para cálculo de valor)
@@ -79,6 +81,7 @@ def find_column(df, candidates):
     cols = df.columns
     for c in candidates:
         for col in cols:
+            # Tolerância a espaços e case-insensitive
             if c.lower() == col.strip().lower() or c.lower() in col.strip().lower():
                 return col
     return None
@@ -122,18 +125,22 @@ def compute_monetized(df, cat_col, qty_col):
     df["_VALOR_MONETIZADO"] = df.apply(monet_value, axis=1)
     return df.drop(columns=['__CATEGORIA_NORMALIZADA'])
 
-# Função de Carregamento de Dados (AGORA ACEITANDO O ARQUIVO CARREGADO)
+# Função de Carregamento de Dados (LENDO O ARQUIVO EXCEL DO DISCO)
+# Usando st.cache_data para evitar leitura repetida
 @st.cache_data(show_spinner="Carregando e processando dados da base...")
-def load_data(uploaded_file):
-    # 1. TENTA LER O ARQUIVO EXCEL DO OBJETO CARREGADO
+def load_data(path):
+    # 1. TENTA LER O ARQUIVO EXCEL DO DISCO
     try:
-        # Usa openpyxl para ler o arquivo .xlsx
-        df_raw = pd.read_excel(uploaded_file, engine='openpyxl')
+        # Usa openpyxl para ler o arquivo .xlsx. Assume que os dados estão na primeira aba (sheet_name=0).
+        df_raw = pd.read_excel(path, engine='openpyxl', sheet_name=0)
+    except FileNotFoundError:
+        st.error(f"Arquivo de dados Excel '{path}' não encontrado. Por favor, verifique se ele está na mesma pasta do script.")
+        return None
     except ImportError:
         st.error("A biblioteca 'openpyxl' é necessária para ler arquivos .xlsx. Por favor, instale-a usando: `pip install openpyxl`.")
         return None
     except Exception as e:
-        st.error(f"Erro na leitura e processamento dos dados do arquivo: {e}")
+        st.error(f"Erro na leitura do arquivo Excel. Verifique a estrutura das abas (sheets): {e}")
         return None
 
     # 2. NORMALIZAR COLUNAS (remover espaços)
@@ -143,10 +150,10 @@ def load_data(uploaded_file):
     # 3. DETECTAR COLUNAS IMPORTANTES
     col_date = find_column(df_raw, ["Data"])
     col_cat  = find_column(df_raw, ["Categoria"])
-    col_qty  = find_column(df_raw, ["Qtde"])
+    col_qty  = find_column(df_raw, ["Qtde", "Quantidade"]) # Adicionado "Quantidade" como candidato
 
     if col_date is None or col_cat is None or col_qty is None:
-        st.error("Colunas essenciais (Data, Categoria ou Qtde) não foram encontradas na tabela. Verifique se os nomes das colunas estão corretos.")
+        st.error("Colunas essenciais (Data, Categoria ou Qtde/Quantidade) não foram encontradas na tabela. Verifique se os nomes das colunas estão corretos.")
         return None
 
     # 4. PREPARAÇÃO E CÁLCULO
@@ -158,34 +165,27 @@ def load_data(uploaded_file):
     return df, col_date, col_cat, col_qty
 
 # ---------------------------
-# Sidebar (file uploader + filters)
+# Load data (CHAMADA DA FUNÇÃO COM CACHE)
+# ---------------------------
+result = load_data(EXCEL_DATA_PATH)
+
+if result is None:
+    st.stop()
+    
+df, col_date, col_cat, col_qty = result
+
+
+# ---------------------------
+# Sidebar (image + filters)
 # ---------------------------
 with st.sidebar:
-    # 1. NOVO COMPONENTE: FILE UPLOADER
+    # BOTÃO DE ATUALIZAÇÃO: Limpa o cache e força a releitura do arquivo
     st.markdown("---")
-    uploaded_file = st.file_uploader("Suba a Tabela_Monetizacao_4_BPM_PM_RN.xlsx", type=["xlsx"], help="Selecione o arquivo Excel atualizado do seu computador.")
-    
-    # 2. BOTÃO DE ATUALIZAÇÃO (CORREÇÃO DO PROBLEMA DE CACHE)
-    if st.button("🔄 Forçar Recarregamento (Útil se o arquivo subir, mas os dados não mudarem)", type="primary"):
+    if st.button("🔄 Atualizar Dados da Base", type="primary"):
         st.cache_data.clear() # Invalida o cache
         st.experimental_rerun() # Re-executa o script
         
     st.markdown("---")
-    
-    # Se o arquivo não foi carregado, o app para aqui.
-    if uploaded_file is None:
-        st.warning("Por favor, suba o arquivo Excel 'Tabela_Monetizacao_4_BPM_PM_RN.xlsx' para iniciar o aplicativo.")
-        st.stop()
-        
-    # Carrega os dados (somente se o arquivo tiver sido carregado)
-    result = load_data(uploaded_file)
-    
-    if result is None:
-        st.stop()
-        
-    df, col_date, col_cat, col_qty = result
-    
-    # O resto da sidebar segue aqui:
     
     # Tenta carregar a imagem do brasão
     try:
@@ -229,6 +229,7 @@ def get_base64_image(img_path):
         with open(img_path, "rb") as img_file:
             return base64.b64encode(img_file.read()).decode()
     except FileNotFoundError:
+        # Se a imagem não for encontrada, usa um placeholder transparente 1x1
         return "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
 
 BRASAO_BASE64 = get_base64_image(BRASAO_PATH)
@@ -284,123 +285,121 @@ st.markdown("---")
 # ---------------------------
 # Filtering
 # ---------------------------
-# Verifica se os dados foram carregados (sem erros)
-if 'df' in locals():
-    start_dt = pd.to_datetime(start_date)
-    end_dt   = pd.to_datetime(end_date) + pd.Timedelta(hours=23, minutes=59, seconds=59)
+start_dt = pd.to_datetime(start_date)
+end_dt   = pd.to_datetime(end_date) + pd.Timedelta(hours=23, minutes=59, seconds=59)
 
-    mask = (df[col_date] >= start_dt) & (df[col_date] <= end_dt) & (df[col_cat].astype(str).isin(selected_cats))
-    df_filt = df.loc[mask].copy()
+mask = (df[col_date] >= start_dt) & (df[col_date] <= end_dt) & (df[col_cat].astype(str).isin(selected_cats))
+df_filt = df.loc[mask].copy()
 
-    # ------------- compute comparison period (same duration immediately before start_dt)
-    period_days = (end_dt - start_dt).days + 1
-    prev_end = start_dt - pd.Timedelta(seconds=1)
-    prev_start = prev_end - pd.Timedelta(days=period_days-1)
-    mask_prev = (df[col_date] >= prev_start) & (df[col_date] <= prev_end) & (df[col_cat].astype(str).isin(selected_cats))
-    df_prev = df.loc[mask_prev].copy()
+# ------------- compute comparison period (same duration immediately before start_dt)
+period_days = (end_dt - start_dt).days + 1
+prev_end = start_dt - pd.Timedelta(seconds=1)
+prev_start = prev_end - pd.Timedelta(days=period_days-1)
+mask_prev = (df[col_date] >= prev_start) & (df[col_date] <= prev_end) & (df[col_cat].astype(str).isin(selected_cats))
+df_prev = df.loc[mask_prev].copy()
 
-    # ---------------------------
-    # Aggregations & pivot
-    # ---------------------------
-    if df_filt.empty:
-        st.warning("Nenhum registro encontrado para os filtros selecionados.")
+# ---------------------------
+# Aggregations & pivot
+# ---------------------------
+if df_filt.empty:
+    st.warning("Nenhum registro encontrado para os filtros selecionados.")
+else:
+    
+    group = df_filt.groupby(col_cat).agg(
+        QUANTIDADE = (col_qty, "sum"),
+        VALOR_MONETIZADO = ("_VALOR_MONETIZADO", "sum"),
+        REGISTROS = (col_date, "count")
+    ).reset_index().sort_values("VALOR_MONETIZADO", ascending=False)
+
+    total_valor = group["VALOR_MONETIZADO"].sum()
+    total_qtd   = group["QUANTIDADE"].sum()
+    # percentages
+    group["% do Valor"] = (group["VALOR_MONETIZADO"] / total_valor * 100).fillna(0).round(2)
+    group["% da Quantidade"] = (group["QUANTIDADE"] / total_qtd * 100).fillna(0).round(2)
+    group["VALOR_MONETIZADO"] = group["VALOR_MONETIZADO"].round(2)
+    group["QUANTIDADE"] = group["QUANTIDADE"].round(3)
+
+
+    # Indicator: compare total_valor vs previous period
+    prev_total_valor = df_prev["_VALOR_MONETIZADO"].sum() if not df_prev.empty else 0.0
+    if prev_total_valor == 0 and total_valor == 0:
+        delta_label = "Sem dados"
     else:
-        
-        group = df_filt.groupby(col_cat).agg(
-            QUANTIDADE = (col_qty, "sum"),
-            VALOR_MONETIZADO = ("_VALOR_MONETIZADO", "sum"),
-            REGISTROS = (col_date, "count")
-        ).reset_index().sort_values("VALOR_MONETIZADO", ascending=False)
+        delta_val = total_valor - prev_total_valor
+        delta_label = f"R$ {delta_val:,.2f}"
 
-        total_valor = group["VALOR_MONETIZADO"].sum()
-        total_qtd   = group["QUANTIDADE"].sum()
-        # percentages
-        group["% do Valor"] = (group["VALOR_MONETIZADO"] / total_valor * 100).fillna(0).round(2)
-        group["% da Quantidade"] = (group["QUANTIDADE"] / total_qtd * 100).fillna(0).round(2)
-        group["VALOR_MONETIZADO"] = group["VALOR_MONETIZADO"].round(2)
-        group["QUANTIDADE"] = group["QUANTIDADE"].round(3)
+    # Dashboard KPIs coloridos
+    c1, c2, c3, c4 = st.columns([1.5,1.5,1,1])
+    with c1:
+        st.metric("Total Monetizado (R$)", f"R$ {total_valor:,.2f}", delta=delta_label, delta_color="normal")
+    with c2:
+        st.metric("Total Quantidade", f"{total_qtd:,.3f}") 
+    with c3:
+        st.metric("Registros", f"{len(df_filt)}")
+    with c4:
+        st.metric("Categorias", f"{group.shape[0]}")
 
-
-        # Indicator: compare total_valor vs previous period
-        prev_total_valor = df_prev["_VALOR_MONETIZADO"].sum() if not df_prev.empty else 0.0
-        if prev_total_valor == 0 and total_valor == 0:
-            delta_label = "Sem dados"
-        else:
-            delta_val = total_valor - prev_total_valor
-            delta_label = f"R$ {delta_val:,.2f}"
-
-        # Dashboard KPIs coloridos
-        c1, c2, c3, c4 = st.columns([1.5,1.5,1,1])
-        with c1:
-            st.metric("Total Monetizado (R$)", f"R$ {total_valor:,.2f}", delta=delta_label, delta_color="normal")
-        with c2:
-            st.metric("Total Quantidade", f"{total_qtd:,.3f}") 
-        with c3:
-            st.metric("Registros", f"{len(df_filt)}")
-        with c4:
-            st.metric("Categorias", f"{group.shape[0]}")
-
-        st.markdown("<hr style='margin:0.5em 0;'>", unsafe_allow_html=True)
+    st.markdown("<hr style='margin:0.5em 0;'>", unsafe_allow_html=True)
 
 
-        # Tabela dinâmica interativa (AgGrid) - oculta colunas REGISTROS, % do Valor e % da Quantidade
-        st.subheader("Tabela Monetização por Categoria")
-        group_display = group.drop(columns=["REGISTROS", "% do Valor", "% da Quantidade"], errors="ignore")
-        
-        gb = GridOptionsBuilder.from_dataframe(group_display.reset_index(drop=True))
-        gb.configure_column("VALOR_MONETIZADO", valueFormatter='`R$ ` + value.toLocaleString("pt-BR", {minimumFractionDigits: 2, maximumFractionDigits: 2})')
-        gb.configure_column("QUANTIDADE", valueFormatter='value.toLocaleString("pt-BR", {minimumFractionDigits: 3, maximumFractionDigits: 3})')
-        
-        gb.configure_pagination(paginationAutoPageSize=True)
-        gb.configure_default_column(editable=False, groupable=True, filter=True, resizable=True, sortable=True)
-        gb.configure_side_bar()
-        gb.configure_selection('single')
-        gridOptions = gb.build()
-        AgGrid(group_display.reset_index(drop=True), gridOptions=gridOptions, height=420, theme='alpine', allow_unsafe_jscode=True, fit_columns_on_grid_load=True)
+    # Tabela dinâmica interativa (AgGrid) - oculta colunas REGISTROS, % do Valor e % da Quantidade
+    st.subheader("Tabela Monetização por Categoria")
+    group_display = group.drop(columns=["REGISTROS", "% do Valor", "% da Quantidade"], errors="ignore")
+    
+    gb = GridOptionsBuilder.from_dataframe(group_display.reset_index(drop=True))
+    gb.configure_column("VALOR_MONETIZADO", valueFormatter='`R$ ` + value.toLocaleString("pt-BR", {minimumFractionDigits: 2, maximumFractionDigits: 2})')
+    gb.configure_column("QUANTIDADE", valueFormatter='value.toLocaleString("pt-BR", {minimumFractionDigits: 3, maximumFractionDigits: 3})')
+    
+    gb.configure_pagination(paginationAutoPageSize=True)
+    gb.configure_default_column(editable=False, groupable=True, filter=True, resizable=True, sortable=True)
+    gb.configure_side_bar()
+    gb.configure_selection('single')
+    gridOptions = gb.build()
+    AgGrid(group_display.reset_index(drop=True), gridOptions=gridOptions, height=420, theme='alpine', allow_unsafe_jscode=True, fit_columns_on_grid_load=True)
 
-        
-        # ---------------------------
-        # 3D Chart (Plotly)
-        # ---------------------------
-        st.subheader("Visualização 3D — Valor monetizado por categoria")
+    
+    # ---------------------------
+    # 3D Chart (Plotly)
+    # ---------------------------
+    st.subheader("Visualização 3D — Valor monetizado por categoria")
 
-        x = group[col_cat].astype(str)
-        z = group["VALOR_MONETIZADO"].values
-        perc = group["% do Valor"].values
-        y = np.zeros(len(x))
+    x = group[col_cat].astype(str)
+    z = group["VALOR_MONETIZADO"].values
+    perc = group["% do Valor"].values
+    y = np.zeros(len(x))
 
-        fig = go.Figure()
-        for i, (xi, yi, zi, pi) in enumerate(zip(x, y, z, perc)):
-            fig.add_trace(go.Scatter3d(
-                x=[i, i],
-                y=[0, 0],
-                z=[0, zi],
-                mode='lines+markers',
-                marker=dict(size=6),
-                line=dict(width=8),
-                name=f"{xi} — R$ {zi:,.2f} ({pi:.2f}%)",
-                hoverinfo='text',
-                hovertext=f"{xi}<br>Valor: R$ {zi:,.2f}<br>{pi:.2f}%"
-            ))
-        fig.update_layout(
-            scene=dict(
-                xaxis=dict(tickvals=list(range(len(x))), ticktext=list(x), title="Categoria"),
-                yaxis=dict(title=""),
-                zaxis=dict(title="Valor (R$)")
-            ),
-            margin=dict(l=0, r=0, t=30, b=0),
-            height=600,
-            showlegend=False
-        )
-        st.plotly_chart(fig, use_container_width=True)
+    fig = go.Figure()
+    for i, (xi, yi, zi, pi) in enumerate(zip(x, y, z, perc)):
+        fig.add_trace(go.Scatter3d(
+            x=[i, i],
+            y=[0, 0],
+            z=[0, zi],
+            mode='lines+markers',
+            marker=dict(size=6),
+            line=dict(width=8),
+            name=f"{xi} — R$ {zi:,.2f} ({pi:.2f}%)",
+            hoverinfo='text',
+            hovertext=f"{xi}<br>Valor: R$ {zi:,.2f}<br>{pi:.2f}%"
+        ))
+    fig.update_layout(
+        scene=dict(
+            xaxis=dict(tickvals=list(range(len(x))), ticktext=list(x), title="Categoria"),
+            yaxis=dict(title=""),
+            zaxis=dict(title="Valor (R$)")
+        ),
+        margin=dict(l=0, r=0, t=30, b=0),
+        height=600,
+        showlegend=False
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
-        # Also show pie for easy percentual view
-        st.subheader("Distribuição percentual (pizza)")
-        pie = go.Figure(go.Pie(labels=group[col_cat].astype(str), values=group["VALOR_MONETIZADO"], hole=0.35,
-                                 hoverinfo="label+percent+value",
-                                 hovertemplate="%{label}<br>Valor: R$ %{value:,.2f}<br>Participação: %{percent}<extra></extra>"))
-        pie.update_layout(height=450, margin=dict(l=0,r=0,t=30,b=0))
-        st.plotly_chart(pie, use_container_width=True)
+    # Also show pie for easy percentual view
+    st.subheader("Distribuição percentual (pizza)")
+    pie = go.Figure(go.Pie(labels=group[col_cat].astype(str), values=group["VALOR_MONETIZADO"], hole=0.35,
+                             hoverinfo="label+percent+value",
+                             hovertemplate="%{label}<br>Valor: R$ %{value:,.2f}<br>Participação: %{percent}<extra></extra>"))
+    pie.update_layout(height=450, margin=dict(l=0,r=0,t=30,b=0))
+    st.plotly_chart(pie, use_container_width=True)
 
 # ---------------------------
 # Footer
