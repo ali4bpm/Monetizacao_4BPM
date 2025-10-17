@@ -6,8 +6,6 @@ from datetime import timedelta
 from st_aggrid import AgGrid, GridOptionsBuilder
 from PIL import Image
 import base64
-import io 
-import os # Importação mantida para eventual debug, mas sem uso direto
 
 st.set_page_config(
     page_title="MONETIZAÇÃO BATALHÃO POTENGI - 4º BPM PMRN", page_icon="brasao.jpg",
@@ -18,39 +16,74 @@ st.set_page_config(
 # ---------------------------
 # Config / assets
 # ---------------------------
-# USANDO O NOME DO ARQUIVO XLSX QUE FOI CONFIRMADO NO DIRETÓRIO
-EXCEL_PATH = "Tabela_Monetizacao_4 BPM_PM_RN.xlsx"
-BRASAO_PATH = "brasao.jpg" 
+EXCEL_POSSIBLE_PATHS = [
+    "Tabela_Monetizacao_4 BPM_PM_RN.xlsx"
+]
+BRASAO_PATH = "brasao.jpg"  # imagem enviada por você
 
-# O MONET_MAP SERÁ GERADO DINAMICAMENTE
-MONET_MAP = {} 
-
-# CRIAÇÃO DO MAPA DE CATEGORIAS (Mapeamento de nomes curtos para nomes completos)
-CATEGORY_MAPPING = {
-    'Artesanal Curta': 'Armas - Revólver Artesanal',
-    'Revólver': 'Armas - Revólver',
-    'Pistola': 'Armas - Pistola',
-    'Fuzil': 'Armas - Fuzil',
-    'Metralhadora e Submetralhadora': 'Armas - Metralhadora e Submetralhadora',
-    'Espingarda': 'Armas - Espingarda',
-    'Espingarda Artesanal': 'Armas - Espingarda Artesanal',
-    'Carabina': 'Armas - Carabina',
-    'Munição': 'Munições', 
-    'Dinheiro apreendido': 'Dinheiro apreendido',
-    'Dinheiro Apreendido': 'Dinheiro apreendido', # Adicionado para robustez
-    'Artesanal Longa': 'Armas - Espingarda Artesanal',
+# Monetization mapping (usado para cálculo de valor)
+MONET_MAP = {
+    "Maconha": ( "Kg", 2168.4 ),
+    "Haxixe": ( "Kg", 12000.0 ),
+    "Pasta base": ( "Kg", 120000.0 ),
+    "Cloridrato de cocaína": ( "Kg", 180000.0 ),
+    "Crack": ( "Kg", 20000.0 ),
+    "Anfetaminas": ( "Unidade", 6.0 ),
+    "Barbitúricos": ( "Unidade", 6.0 ),
+    "LSD": ( "Ponto", 30.0 ),
+    "Lança-perfume": ( "Caixa", 1250.0 ),
+    "Ecstasy": ( "Unidade", 40.0 ),
+    "Cigarro": ( "Pacote", 35.0 ),
+    "Armas - Revólver": ( "Unidade", 3000.0 ),
+    "Armas - Revólver Artesanal": ( "Unidade", 500.0 ),
+    "Armas - Pistola": ( "Unidade", 5000.0 ),
+    "Armas - Fuzil": ( "Unidade", 40000.0 ),
+    "Armas - Metralhadora e Submetralhadora": ( "Unidade", 30000.0 ),
+    "Armas - Espingarda": ( "Unidade", 5000.0 ),
+    "Armas - Espingarda Artesanal": ( "Unidade", 600.0 ),
+    "Armas - Carabina": ( "Unidade", 5000.0 ),
+    "Munições": ( "Unidade", 15.0 ),
+    "Veículos de passeio": ( "Unidade", 55092.43 ),
+    "Motocicletas": ( "Unidade", 18889.78 ),
+    "Veículos pesados": ( "Unidade", 120980.0 ),
+    "Dinheiro apreendido": ( "R$", 1.0 ),
 }
-# As chaves finais (do MONET_MAP) serão adicionadas ao CATEGORY_MAPPING posteriormente
 
 # ---------------------------
 # Helpers
 # ---------------------------
+
+def try_load_excel(paths):
+    for p in paths:
+        try:
+            df = pd.read_excel(p, sheet_name=None)  # read all sheets
+            return p, df
+        except Exception as e:
+            continue
+    return None, None
+
+def detect_sheet_and_columns(sheets_dict):
+    # Prefer sheet named like 'Base_Monetização' (se existir) ou primeira
+    preferred_names = ["Base_Monetização", "Base_Monetizacao", "Base_Monetização ", "Base_Monetização1", "Base_Monetização (1)"]
+    sheet_name = None
+    for n in sheets_dict.keys():
+        if any(pref.lower() in n.lower() for pref in preferred_names):
+            sheet_name = n
+            break
+    if sheet_name is None:
+        # fallback to first sheet
+        sheet_name = list(sheets_dict.keys())[0]
+    df = sheets_dict[sheet_name].copy()
+    # normalize columns
+    col_map = {c: c.strip() for c in df.columns}
+    df.rename(columns=col_map, inplace=True)
+    return sheet_name, df
+
 def find_column(df, candidates):
     cols = df.columns
     for c in candidates:
         for col in cols:
-            # Tolerância a espaços e case-insensitive
-            if c.lower() == col.strip().lower() or c.lower() in col.strip().lower():
+            if c.lower() == col.lower() or c.lower() in col.lower():
                 return col
     return None
 
@@ -58,178 +91,73 @@ def ensure_datetime(df, col):
     df[col] = pd.to_datetime(df[col], errors='coerce')
     return df
 
-def normalize_category(cat):
-    """Normaliza a categoria para corresponder às chaves do MONET_MAP final."""
-    if pd.isna(cat):
-        return cat
-    cat_str = str(cat).strip()
-    return CATEGORY_MAPPING.get(cat_str, cat_str)
-
-
-def compute_monetized(df, cat_col, qty_col, current_monet_map):
-    df['__CATEGORIA_NORMALIZADA'] = df[cat_col].apply(normalize_category)
-    
+def compute_monetized(df, cat_col, qty_col):
+    # Create monet_value column
     def monet_value(row):
-        cat = row.get('__CATEGORIA_NORMALIZADA')
+        cat = row.get(cat_col)
         qty = row.get(qty_col)
-        
         if pd.isna(qty) or qty == "":
             return 0.0
         try:
             qty_num = float(qty)
         except:
             return 0.0
-        
-        # Dinheiro apreendido é o valor exato, sem custo unitário
-        if cat == 'Dinheiro apreendido':
-             return qty_num
-        
-        if cat in current_monet_map:
-            unit_cost = current_monet_map[cat][1]
+        # get unit cost
+        if cat in MONET_MAP:
+            unit_cost = MONET_MAP[cat][1]
         else:
-            unit_cost = 0.0
-            
+            # fallback: if category contains known key
+            matched = None
+            for k in MONET_MAP.keys():
+                if isinstance(cat, str) and k.lower() in cat.lower():
+                    matched = k
+                    break
+            unit_cost = MONET_MAP[matched][1] if matched else 0.0
         return qty_num * unit_cost
-        
     df["_VALOR_MONETIZADO"] = df.apply(monet_value, axis=1)
-    return df.drop(columns=['__CATEGORIA_NORMALIZADA'])
+    return df
 
 # ---------------------------
-# Funções de Carregamento de Dados (XLSX com Cache)
+# Load data
 # ---------------------------
-
-# 1. Carrega os critérios para montar o MONET_MAP
-@st.cache_data(show_spinner="Carregando critérios de monetização...")
-def load_criteria(path):
-    criteria_map = {}
-    try:
-        # Lendo a aba "Critérios" do XLSX
-        df_crit = pd.read_excel(path, engine='openpyxl', sheet_name='Critérios')
-        
-        # Normaliza colunas
-        df_crit.columns = [c.strip() for c in df_crit.columns]
-        
-        # Colunas esperadas no arquivo Critérios
-        col_cat  = find_column(df_crit, ["Categoria"])
-        col_unit = find_column(df_crit, ["Unidade de Medida"])
-        col_cost = find_column(df_crit, ["Custo Unitário (R$)"])
-        
-        if not (col_cat and col_unit and col_cost):
-             st.error("Colunas essenciais (Categoria, Unidade de Medida, Custo Unitário (R$)) não encontradas na aba 'Critérios'.")
-             return None
-        
-        # Constrói o MONET_MAP
-        for index, row in df_crit.iterrows():
-            cat = str(row[col_cat]).strip()
-            unit = str(row[col_unit]).strip()
-            cost = row[col_cost]
-            
-            if pd.notna(cat) and pd.notna(cost) and cost > 0:
-                criteria_map[cat] = (unit, float(cost))
-                
-        # Atualiza o CATEGORY_MAPPING com as chaves finais dos critérios
-        global CATEGORY_MAPPING
-        armas_auto = {
-            k.split("Armas - ")[-1]: k for k in criteria_map.keys() if k.startswith("Armas - ")
-        }
-        CATEGORY_MAPPING.update(armas_auto)
-        outras_auto = {
-            k: k for k in criteria_map.keys() if not k.startswith("Armas - ") and k != "Munições" and k != "Dinheiro apreendido"
-        }
-        CATEGORY_MAPPING.update(outras_auto)
-        
-        return criteria_map
-
-    except FileNotFoundError:
-        st.error(f"Arquivo XLSX '{path}' não encontrado. **Verifique se o nome do arquivo está EXATO: 'Tabela_Monetizacao_4 BPM_PM_RN.xlsx'.**")
-        return None
-    except ValueError as e:
-        # Este erro ocorre se a aba 'Critérios' não for encontrada
-        st.error(f"A aba **'Critérios'** não foi encontrada no arquivo '{path}'. Verifique o nome da aba no Excel.")
-        return None
-    except Exception as e:
-        st.error(f"Erro na leitura ou processamento do arquivo de Critérios XLSX: {e}")
-        return None
-
-# 2. Carrega e processa os dados da base principal
-@st.cache_data(show_spinner="Carregando e processando dados da base...")
-def load_base_data(path, current_monet_map):
-    if not current_monet_map:
-        st.error("Não foi possível carregar os Critérios de Monetização. Parando o carregamento da base.")
-        return None
-        
-    try:
-        # Lendo a aba "Base_Monetização" do XLSX
-        df_raw = pd.read_excel(path, engine='openpyxl', sheet_name='Base_Monetização')
-        
-    except FileNotFoundError:
-        # Este erro já foi tratado no load_criteria, mas é mantido por segurança.
-        st.error(f"Arquivo XLSX '{path}' não encontrado.")
-        return None
-    except ValueError as e:
-        # Este erro ocorre se a aba 'Base_Monetização' não for encontrada
-        st.error(f"A aba **'Base_Monetização'** não foi encontrada no arquivo '{path}'. Verifique o nome da aba no Excel.")
-        return None
-    except Exception as e:
-        st.error(f"Erro na leitura e processamento da aba de Dados XLSX: {e}")
-        return None
-
-    # 2. NORMALIZAR COLUNAS (remover espaços)
-    col_map = {c: c.strip() for c in df_raw.columns}
-    df_raw.rename(columns=col_map, inplace=True)
-
-    # 3. DETECTAR COLUNAS IMPORTANTES
-    col_date = find_column(df_raw, ["Data"])
-    col_cat  = find_column(df_raw, ["Categoria"])
-    col_qty  = find_column(df_raw, ["Qtde", "Quantidade"])
-
-    if col_date is None or col_cat is None or col_qty is None:
-        st.error("Colunas essenciais (Data, Categoria ou Qtde/Quantidade) não foram encontradas na tabela principal ('Base_Monetização').")
-        return None
-
-    # 4. PREPARAÇÃO E CÁLCULO
-    df = df_raw.copy()
-    df = ensure_datetime(df, col_date)
-    df = df[~df[col_date].isna()].copy()
-    # Passando o MONET_MAP carregado
-    df = compute_monetized(df, col_cat, col_qty, current_monet_map)
-
-    return df, col_date, col_cat, col_qty
-
-# ---------------------------
-# Load data (CHAMADA PRINCIPAL)
-# ---------------------------
-MONET_MAP = load_criteria(EXCEL_PATH)
-if MONET_MAP is None:
+path_used, sheets = try_load_excel(EXCEL_POSSIBLE_PATHS)
+if sheets is None:
+    st.sidebar.error("Arquivo Excel não encontrado automaticamente. Coloque o arquivo .xlsx na mesma pasta do app ou atualize o caminho em EXCEL_POSSIBLE_PATHS no código.")
     st.stop()
-    
-result = load_base_data(EXCEL_PATH, MONET_MAP)
 
-if result is None:
+sheet_name, df_raw = detect_sheet_and_columns(sheets)
+
+# detect important columns
+col_date = find_column(df_raw, ["DATA", "Data", "data"])
+col_cat  = find_column(df_raw, ["Categoria", "categoria", "CATEGORIA", "Tipo", "produto"])
+col_qty  = find_column(df_raw, ["Quantidade", "quantidade", "Qtd", "QTD", "Valor", "peso", "PESO", "Quantidade_apreendida", "QTD_APREENDIDA"])
+
+if col_date is None:
+    st.error("Não foi possível localizar a coluna de data na planilha. Certifique-se de ter uma coluna com datas (ex: 'DATA' ou 'Data').")
     st.stop()
-    
-df, col_date, col_cat, col_qty = result
+if col_cat is None:
+    st.error("Não foi possível localizar a coluna de categoria (ex: 'Categoria').")
+    st.stop()
+if col_qty is None:
+    # se não achar quantidade, assumimos 1 por registro
+    df_raw["__QUANTIDADE_ASSUMIDA"] = 1
+    col_qty = "__QUANTIDADE_ASSUMIDA"
 
+# normalize date
+df = df_raw.copy()
+df = ensure_datetime(df, col_date)
+
+# drop rows sem data
+df = df[~df[col_date].isna()].copy()
+
+# compute monetized
+df = compute_monetized(df, col_cat, col_qty)
 
 # ---------------------------
 # Sidebar (image + filters)
 # ---------------------------
 with st.sidebar:
-    # BOTÃO DE ATUALIZAÇÃO: Limpa o cache e força a releitura do arquivo
-    st.markdown("---")
-    if st.button("🔄 Atualizar Dados da Base (Limpa Cache)", type="primary"):
-        st.cache_data.clear() # Invalida o cache
-        st.experimental_rerun() # Re-executa o script
-        
-    st.markdown("---")
-    
-    # Tenta carregar a imagem do brasão
-    try:
-        Image.open(BRASAO_PATH)
-        st.image(BRASAO_PATH, use_container_width=True)
-    except FileNotFoundError:
-        st.warning(f"Imagem de ícone '{BRASAO_PATH}' não encontrada. Substituindo por um placeholder.")
-    
+    st.image(BRASAO_PATH, use_container_width=True)
     st.markdown("### Filtros")
     # date range
     min_date = df[col_date].min()
@@ -246,7 +174,6 @@ with st.sidebar:
         start_date = end_date = date_range[0]
     else:
         start_date = end_date = date_range
-        
     # categories
     unique_cats = sorted(df[col_cat].dropna().astype(str).unique())
     selected_cats = st.multiselect("Categorias", options=unique_cats, default=unique_cats)
@@ -254,18 +181,15 @@ with st.sidebar:
     st.markdown("**Instruções**: selecione período e categorias. O app calculará o valor monetizado usando os critérios oficiais listados no cabeçalho.")
     st.markdown("---")
 
-
 # ---------------------------
 # Title + description + criteria block
 # ---------------------------
 
+
 # Background image styling (institucional, translúcido) e remoção de ícones fork/github/menu
 def get_base64_image(img_path):
-    try:
-        with open(img_path, "rb") as img_file:
-            return base64.b64encode(img_file.read()).decode()
-    except FileNotFoundError:
-        return "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+    with open(img_path, "rb") as img_file:
+        return base64.b64encode(img_file.read()).decode()
 
 BRASAO_BASE64 = get_base64_image(BRASAO_PATH)
 PAGE_BG = f"""
@@ -304,21 +228,22 @@ st.markdown(f"""
 # description + monetization criteria
 st.markdown(
     """
-**Objetivo do aplicativo:** Aplicativo para análise e monetização das apreensões registradas na Base_Monetização. Permite filtrar por data e categoria, gerar tabela dinâmica com valores monetizados, visualizar participação percentual e comparar com período anterior.
+**Objetivo do aplicativo:**  
+Aplicativo para análise e monetização das apreensões registradas na Base_Monetização. Permite filtrar por data e categoria, gerar tabela dinâmica com valores monetizados, visualizar participação percentual e comparar com período anterior.
 
 **Critérios de monetização (Categoria — Unidade — Custo Unitário R$):**
 """
 )
 # show criteria table
-crit_df_display = pd.DataFrame([
+crit_df = pd.DataFrame([
     {"Categoria": k, "Unidade de Medida": MONET_MAP[k][0], "Custo Unitário (R$)": MONET_MAP[k][1]} for k in MONET_MAP
 ])
-st.dataframe(crit_df_display.sort_values("Categoria").reset_index(drop=True))
+st.dataframe(crit_df.sort_values("Categoria").reset_index(drop=True))
 
 st.markdown("---")
 
 # ---------------------------
-# Filtering & Dashboard
+# Filtering
 # ---------------------------
 start_dt = pd.to_datetime(start_date)
 end_dt   = pd.to_datetime(end_date) + pd.Timedelta(hours=23, minutes=59, seconds=59)
@@ -339,7 +264,7 @@ df_prev = df.loc[mask_prev].copy()
 if df_filt.empty:
     st.warning("Nenhum registro encontrado para os filtros selecionados.")
 else:
-    
+    # group by category
     group = df_filt.groupby(col_cat).agg(
         QUANTIDADE = (col_qty, "sum"),
         VALOR_MONETIZADO = ("_VALOR_MONETIZADO", "sum"),
@@ -355,20 +280,27 @@ else:
     group["QUANTIDADE"] = group["QUANTIDADE"].round(3)
 
 
+
     # Indicator: compare total_valor vs previous period
     prev_total_valor = df_prev["_VALOR_MONETIZADO"].sum() if not df_prev.empty else 0.0
     if prev_total_valor == 0 and total_valor == 0:
         delta_label = "Sem dados"
+        delta_pct = None
     else:
         delta_val = total_valor - prev_total_valor
+        if prev_total_valor == 0:
+            pct_change = np.nan
+        else:
+            pct_change = (delta_val / prev_total_valor) * 100
         delta_label = f"R$ {delta_val:,.2f}"
+        delta_pct = f"{pct_change:.2f}%" if not np.isnan(pct_change) else "N/A"
 
     # Dashboard KPIs coloridos
     c1, c2, c3, c4 = st.columns([1.5,1.5,1,1])
     with c1:
         st.metric("Total Monetizado (R$)", f"R$ {total_valor:,.2f}", delta=delta_label, delta_color="normal")
     with c2:
-        st.metric("Total Quantidade", f"{total_qtd:,.3f}") 
+        st.metric("Total Quantidade", f"{int(total_qtd):,}")
     with c3:
         st.metric("Registros", f"{len(df_filt)}")
     with c4:
@@ -380,29 +312,43 @@ else:
     # Tabela dinâmica interativa (AgGrid) - oculta colunas REGISTROS, % do Valor e % da Quantidade
     st.subheader("Tabela Monetização por Categoria")
     group_display = group.drop(columns=["REGISTROS", "% do Valor", "% da Quantidade"], errors="ignore")
-    
     gb = GridOptionsBuilder.from_dataframe(group_display.reset_index(drop=True))
-    gb.configure_column("VALOR_MONETIZADO", valueFormatter='`R$ ` + value.toLocaleString("pt-BR", {minimumFractionDigits: 2, maximumFractionDigits: 2})')
-    gb.configure_column("QUANTIDADE", valueFormatter='value.toLocaleString("pt-BR", {minimumFractionDigits: 3, maximumFractionDigits: 3})')
-    
     gb.configure_pagination(paginationAutoPageSize=True)
     gb.configure_default_column(editable=False, groupable=True, filter=True, resizable=True, sortable=True)
     gb.configure_side_bar()
     gb.configure_selection('single')
     gridOptions = gb.build()
-    AgGrid(group_display.reset_index(drop=True), gridOptions=gridOptions, height=420, theme='alpine', allow_unsafe_jscode=True, fit_columns_on_grid_load=True)
+    AgGrid(group_display.reset_index(drop=True), gridOptions=gridOptions, height=420, theme='alpine', fit_columns_on_grid_load=True)
 
     
+
+    # ---------------------------
+    # Indicator: compare total_valor vs previous period
+    prev_total_valor = df_prev["_VALOR_MONETIZADO"].sum() if not df_prev.empty else 0.0
+    if prev_total_valor == 0 and total_valor == 0:
+        delta_label = "Sem dados"
+        delta_pct = None
+    else:
+        delta_val = total_valor - prev_total_valor
+        if prev_total_valor == 0:
+            pct_change = np.nan
+        else:
+            pct_change = (delta_val / prev_total_valor) * 100
+        delta_label = f"R$ {delta_val:,.2f}"
+        delta_pct = f"{pct_change:.2f}%" if not np.isnan(pct_change) else "N/A"
+
     # ---------------------------
     # 3D Chart (Plotly)
     # ---------------------------
     st.subheader("Visualização 3D — Valor monetizado por categoria")
 
+    # for plotly 3D we create x (index), y (zeros), z (values) and draw as 3D bars via scatter with lines
     x = group[col_cat].astype(str)
     z = group["VALOR_MONETIZADO"].values
     perc = group["% do Valor"].values
     y = np.zeros(len(x))
 
+    # Create 3D bar-like using markers with vertical lines to 'simulate' bars.
     fig = go.Figure()
     for i, (xi, yi, zi, pi) in enumerate(zip(x, y, z, perc)):
         fig.add_trace(go.Scatter3d(
@@ -431,13 +377,16 @@ else:
     # Also show pie for easy percentual view
     st.subheader("Distribuição percentual (pizza)")
     pie = go.Figure(go.Pie(labels=group[col_cat].astype(str), values=group["VALOR_MONETIZADO"], hole=0.35,
-                             hoverinfo="label+percent+value",
-                             hovertemplate="%{label}<br>Valor: R$ %{value:,.2f}<br>Participação: %{percent}<extra></extra>"))
+                          hoverinfo="label+percent+value"))
     pie.update_layout(height=450, margin=dict(l=0,r=0,t=30,b=0))
     st.plotly_chart(pie, use_container_width=True)
 
 # ---------------------------
 # Footer
 # ---------------------------
+df = compute_monetized(df, col_cat, col_qty)
+st.markdown("---")
+df_filt = df.loc[mask].copy()
+df_prev = df.loc[mask_prev].copy()
 st.markdown("---")
 st.markdown("<div style='text-align:center;font-size:1.1em;color:#002060;font-weight:bold;'>© 2025 4º Batalhão de Polícia Militar — 4º BPM PMRN.<br>Todos os direitos reservados.<br>Dados de monetização: 4º BPM PMRN</div>", unsafe_allow_html=True)
