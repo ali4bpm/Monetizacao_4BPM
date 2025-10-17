@@ -16,14 +16,14 @@ st.set_page_config(
 # ---------------------------
 # Config / assets
 # ---------------------------
-# Novo: Configuração do Google Sheets
+# Configuração do Google Sheets
 SHEET_ID = "1jFN66qydPSUqZhRHej8Vccu-02OjhfZrfQ2owdo-RVg"
 # GID 0 corresponde à primeira aba 'Base_Monetização'
 DATA_GID = 0 
 
 BRASAO_PATH = "brasao.jpg"
 
-# Monetization mapping (mantido como hardcoded)
+# Monetization mapping (mantido)
 MONET_MAP = {
     "Maconha": ( "Kg", 2168.4 ),
     "Haxixe": ( "Kg", 12000.0 ),
@@ -58,8 +58,8 @@ MONET_MAP = {
 @st.cache_data(ttl=600, show_spinner="Carregando dados do Google Sheets...") # Cache para 10 minutos
 def load_google_sheet_data(sheet_id, gid):
     """Carrega os dados diretamente do Google Sheets via URL de exportação CSV."""
-    # Constrói a URL de exportação para CSV
-    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&gid={gid}"
+    # NOVO: Usando o formato de exportação CSV, mais robusto
+    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
     try:
         # Lê a planilha diretamente para um DataFrame
         df = pd.read_csv(url)
@@ -67,14 +67,16 @@ def load_google_sheet_data(sheet_id, gid):
         df.columns = [col.strip() for col in df.columns]
         return df
     except Exception as e:
-        # st.error(f"Erro ao carregar dados do Google Sheets (GID={gid}): {e}")
-        return None # Retorna None se a leitura falhar
+        # Exibe a URL e o erro específico no sidebar para facilitar o debug
+        st.sidebar.error(f"Erro ao carregar dados do Google Sheets:")
+        st.sidebar.error(f"URL: {url}")
+        st.sidebar.error(f"Detalhe: {e}")
+        return None 
 
 def find_column(df, candidates):
     cols = df.columns
     for c in candidates:
         for col in cols:
-            # Note: Usamos col.lower() para compatibilidade, o strip já foi feito no load_google_sheet_data
             if c.lower() == col.lower() or c.lower() in col.lower():
                 return col
     return None
@@ -116,8 +118,7 @@ def compute_monetized(df, cat_col, qty_col):
 df_raw = load_google_sheet_data(SHEET_ID, DATA_GID)
 
 if df_raw is None:
-    st.sidebar.error("Não foi possível carregar a base de dados do Google Sheets. Verifique o ID da planilha e o GID da aba, e se o link está público.")
-    st.stop()
+    st.stop() # Interrompe se o carregamento falhar
 
 # detect important columns
 col_date = find_column(df_raw, ["DATA", "Data", "data"])
@@ -303,7 +304,6 @@ else:
     with c1:
         st.metric("Total Monetizado (R$)", f"R$ {total_valor:,.2f}", delta=delta_label, delta_color="normal")
     with c2:
-        # Usamos :,.3f para mostrar 3 casas decimais, já que a quantidade pode ser em Kg
         st.metric("Total Quantidade", f"{total_qtd:,.3f}") 
     with c3:
         st.metric("Registros", f"{len(df_filt)}")
