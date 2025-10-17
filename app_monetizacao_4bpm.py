@@ -52,7 +52,7 @@ MONET_MAP = {
 # ---------------------------
 # Helpers
 # ---------------------------
-
+@st.cache_data(1)
 def try_load_excel(paths):
     for p in paths:
         try:
