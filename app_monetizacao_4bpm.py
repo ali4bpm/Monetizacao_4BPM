@@ -57,9 +57,14 @@ MONET_MAP = {
 # ---------------------------
 
 def try_load_excel():
-    EXCEL_FILE_PATH = "Tabela_Monetizacao_4 BPM_PM_RN.xlsx"
-    df = pd.read_excel(EXCEL_FILE_PATH, sheet_name="Base_Monetização")
-    return df
+    def try_load_excel(paths):
+    for p in paths:
+        try:
+            df = pd.read_excel(p, sheet_name=None)  # read all sheets
+            return p, df
+        except Exception as e:
+            continue
+    return None, None
 
 def detect_sheet_and_columns(sheets_dict):
     # Prefer sheet named like 'Base_Monetização' (se existir) ou primeira
@@ -119,7 +124,7 @@ def compute_monetized(df, cat_col, qty_col):
 # ---------------------------
 # Load data
 # ---------------------------
-path_used, sheets = try_load_excel()
+path_used, sheets = try_load_excel(EXCEL_POSSIBLE_PATHS)
 if sheets is None:
     st.sidebar.error("Arquivo Excel não encontrado automaticamente. Coloque o arquivo .xlsx na mesma pasta do app ou atualize o caminho em EXCEL_POSSIBLE_PATHS no código.")
     st.stop()
