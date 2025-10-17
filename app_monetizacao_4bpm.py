@@ -60,8 +60,8 @@ def load_google_sheet_data(sheet_id, gid):
     """Carrega os dados diretamente do Google Sheets via URL de exportação CSV."""
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
     try:
-        # CORREÇÃO: Adiciona decimal=',' para tratar o formato brasileiro (vírgula como decimal)
-        df = pd.read_csv(url, decimal=',')
+        # CORREÇÃO PRINCIPAL: sep=';' para campos e decimal=',' para números (formato brasileiro)
+        df = pd.read_csv(url, decimal=',', sep=';')
         # Normaliza colunas
         df.columns = [col.strip() for col in df.columns]
         return df
@@ -80,7 +80,8 @@ def find_column(df, candidates):
     return None
 
 def ensure_datetime(df, col):
-    df[col] = pd.to_datetime(df[col], errors='coerce')
+    # Tenta forçar a conversão de datas.
+    df[col] = pd.to_datetime(df[col], errors='coerce', dayfirst=True) # Adicionado dayfirst=True para formato DD/MM/YYYY
     return df
 
 def compute_monetized(df, cat_col, qty_col):
@@ -118,7 +119,7 @@ if df_raw is None:
     st.stop() # Interrompe se o carregamento falhar
 
 # detect important columns
-col_date = find_column(df_raw, ["DATA", "Data", "data"])
+col_date = find_column(df_raw, ["DATA", "Data", "data", "data da ocorrencia"])
 col_cat  = find_column(df_raw, ["Categoria", "categoria", "CATEGORIA", "Tipo", "produto"])
 col_qty  = find_column(df_raw, ["Quantidade", "quantidade", "Qtd", "QTD", "Valor", "peso", "PESO", "Quantidade_apreendida", "QTD_APREENDIDA"])
 
