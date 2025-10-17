@@ -17,9 +17,8 @@ st.set_page_config(
 # ---------------------------
 # Config / assets
 # ---------------------------
-# ALTERADO PARA LER O ARQUIVO REAL (ASSUMINDO QUE ELE ESTÁ NA PASTA)
-# Você precisará salvar o conteúdo do seu CSV no arquivo com este nome.
-CSV_DATA_PATH = "Tabela_Monetizacao_4 BPM_PM_RN.xlsx - Base_Monetização.csv"
+# DEFINIÇÃO DO CAMINHO DO ARQUIVO EXCEL
+EXCEL_DATA_PATH = "Tabela_Monetizacao_4_BPM_PM_RN.xlsx"
 BRASAO_PATH = "brasao.jpg" 
 
 # Monetization mapping (usado para cálculo de valor)
@@ -78,41 +77,6 @@ CATEGORY_MAPPING.update(outras_auto)
 # ---------------------------
 # Helpers
 # ---------------------------
-# Função de Carregamento de Dados (AGORA COM CACHE)
-@st.cache_data(show_spinner="Carregando e processando dados da base...")
-def load_data(path):
-    # 1. TENTA LER O ARQUIVO CSV DO DISCO
-    try:
-        df_raw = pd.read_csv(path)
-    except FileNotFoundError:
-        st.error(f"Arquivo de dados CSV '{path}' não encontrado. Por favor, verifique o caminho.")
-        return None
-    except Exception as e:
-        st.error(f"Erro na leitura do arquivo CSV: {e}")
-        return None
-
-    # 2. NORMALIZAR COLUNAS (remover espaços)
-    col_map = {c: c.strip() for c in df_raw.columns}
-    df_raw.rename(columns=col_map, inplace=True)
-
-    # 3. DETECTAR COLUNAS IMPORTANTES
-    col_date = find_column(df_raw, ["Data"])
-    col_cat  = find_column(df_raw, ["Categoria"])
-    col_qty  = find_column(df_raw, ["Qtde"])
-
-    if col_date is None or col_cat is None or col_qty is None:
-        st.error("Colunas essenciais (Data, Categoria ou Qtde) não foram encontradas.")
-        return None
-
-    # 4. PREPARAÇÃO E CÁLCULO
-    df = df_raw.copy()
-    df = ensure_datetime(df, col_date)
-    df = df[~df[col_date].isna()].copy()
-    df = compute_monetized(df, col_cat, col_qty)
-
-    return df, col_date, col_cat, col_qty
-
-# O resto das funções helpers permanecem o mesmo
 def find_column(df, candidates):
     cols = df.columns
     for c in candidates:
@@ -160,11 +124,48 @@ def compute_monetized(df, cat_col, qty_col):
     df["_VALOR_MONETIZADO"] = df.apply(monet_value, axis=1)
     return df.drop(columns=['__CATEGORIA_NORMALIZADA'])
 
+# Função de Carregamento de Dados (AGORA LENDO O ARQUIVO EXCEL)
+@st.cache_data(show_spinner="Carregando e processando dados da base...")
+def load_data(path):
+    # 1. TENTA LER O ARQUIVO EXCEL DO DISCO
+    try:
+        # Usa openpyxl para ler o arquivo .xlsx. Assume que os dados estão na primeira aba.
+        df_raw = pd.read_excel(path, engine='openpyxl')
+    except FileNotFoundError:
+        st.error(f"Arquivo de dados Excel '{path}' não encontrado. Por favor, verifique se ele está na mesma pasta do script.")
+        return None
+    except ImportError:
+        st.error("A biblioteca 'openpyxl' é necessária para ler arquivos .xlsx. Por favor, instale-a usando: `pip install openpyxl`.")
+        return None
+    except Exception as e:
+        st.error(f"Erro na leitura do arquivo Excel: {e}")
+        return None
+
+    # 2. NORMALIZAR COLUNAS (remover espaços)
+    col_map = {c: c.strip() for c in df_raw.columns}
+    df_raw.rename(columns=col_map, inplace=True)
+
+    # 3. DETECTAR COLUNAS IMPORTANTES
+    col_date = find_column(df_raw, ["Data"])
+    col_cat  = find_column(df_raw, ["Categoria"])
+    col_qty  = find_column(df_raw, ["Qtde"])
+
+    if col_date is None or col_cat is None or col_qty is None:
+        st.error("Colunas essenciais (Data, Categoria ou Qtde) não foram encontradas na tabela. Verifique se os nomes das colunas estão corretos.")
+        return None
+
+    # 4. PREPARAÇÃO E CÁLCULO
+    df = df_raw.copy()
+    df = ensure_datetime(df, col_date)
+    df = df[~df[col_date].isna()].copy()
+    df = compute_monetized(df, col_cat, col_qty)
+
+    return df, col_date, col_cat, col_qty
+
 # ---------------------------
 # Load data (CHAMADA DA FUNÇÃO COM CACHE)
 # ---------------------------
-# A chamada de função retornará o DF e os nomes das colunas
-result = load_data(CSV_DATA_PATH)
+result = load_data(EXCEL_DATA_PATH)
 
 if result is None:
     st.stop()
@@ -176,7 +177,7 @@ df, col_date, col_cat, col_qty = result
 # Sidebar (image + filters)
 # ---------------------------
 with st.sidebar:
-    # BOTÃO DE ATUALIZAÇÃO (CORREÇÃO DO PROBLEMA)
+    # BOTÃO DE ATUALIZAÇÃO (CORREÇÃO DO PROBLEMA DE CACHE)
     st.markdown("---")
     if st.button("🔄 Atualizar Dados da Base", type="primary"):
         st.cache_data.clear() # Invalida o cache
@@ -217,7 +218,7 @@ with st.sidebar:
 
 
 # ---------------------------
-# Title + description + criteria block (sem alteração)
+# Title + description + criteria block
 # ---------------------------
 
 # Background image styling (institucional, translúcido) e remoção de ícones fork/github/menu
