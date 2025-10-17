@@ -16,12 +16,14 @@ st.set_page_config(
 # ---------------------------
 # Config / assets
 # ---------------------------
-EXCEL_POSSIBLE_PATHS = [
-    "Tabela_Monetizacao_4 BPM_PM_RN.xlsx"
-]
-BRASAO_PATH = "brasao.jpg"  # imagem enviada por você
+# Novo: Configuração do Google Sheets
+SHEET_ID = "1jFN66qydPSUqZhRHej8Vccu-02OjhfZrfQ2owdo-RVg"
+# GID 0 corresponde à primeira aba 'Base_Monetização'
+DATA_GID = 0 
 
-# Monetization mapping (usado para cálculo de valor)
+BRASAO_PATH = "brasao.jpg"
+
+# Monetization mapping (mantido como hardcoded)
 MONET_MAP = {
     "Maconha": ( "Kg", 2168.4 ),
     "Haxixe": ( "Kg", 12000.0 ),
@@ -52,36 +54,27 @@ MONET_MAP = {
 # ---------------------------
 # Helpers
 # ---------------------------
-def try_load_excel(paths):
-    for p in paths:
-        try:
-            df = pd.read_excel(p, sheet_name=None)  # read all sheets
-            return p, df
-        except Exception as e:
-            continue
-    return None, None
 
-def detect_sheet_and_columns(sheets_dict):
-    # Prefer sheet named like 'Base_Monetização' (se existir) ou primeira
-    preferred_names = ["Base_Monetização", "Base_Monetizacao", "Base_Monetização ", "Base_Monetização1", "Base_Monetização (1)"]
-    sheet_name = None
-    for n in sheets_dict.keys():
-        if any(pref.lower() in n.lower() for pref in preferred_names):
-            sheet_name = n
-            break
-    if sheet_name is None:
-        # fallback to first sheet
-        sheet_name = list(sheets_dict.keys())[0]
-    df = sheets_dict[sheet_name].copy()
-    # normalize columns
-    col_map = {c: c.strip() for c in df.columns}
-    df.rename(columns=col_map, inplace=True)
-    return sheet_name, df
+@st.cache_data(ttl=600, show_spinner="Carregando dados do Google Sheets...") # Cache para 10 minutos
+def load_google_sheet_data(sheet_id, gid):
+    """Carrega os dados diretamente do Google Sheets via URL de exportação CSV."""
+    # Constrói a URL de exportação para CSV
+    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&gid={gid}"
+    try:
+        # Lê a planilha diretamente para um DataFrame
+        df = pd.read_csv(url)
+        # Normaliza colunas
+        df.columns = [col.strip() for col in df.columns]
+        return df
+    except Exception as e:
+        # st.error(f"Erro ao carregar dados do Google Sheets (GID={gid}): {e}")
+        return None # Retorna None se a leitura falhar
 
 def find_column(df, candidates):
     cols = df.columns
     for c in candidates:
         for col in cols:
+            # Note: Usamos col.lower() para compatibilidade, o strip já foi feito no load_google_sheet_data
             if c.lower() == col.lower() or c.lower() in col.lower():
                 return col
     return None
@@ -117,14 +110,14 @@ def compute_monetized(df, cat_col, qty_col):
     return df
 
 # ---------------------------
-# Load data
+# Load data (Google Sheets)
 # ---------------------------
-path_used, sheets = try_load_excel(EXCEL_POSSIBLE_PATHS)
-if sheets is None:
-    st.sidebar.error("Arquivo Excel não encontrado automaticamente. Coloque o arquivo .xlsx na mesma pasta do app ou atualize o caminho em EXCEL_POSSIBLE_PATHS no código.")
-    st.stop()
 
-sheet_name, df_raw = detect_sheet_and_columns(sheets)
+df_raw = load_google_sheet_data(SHEET_ID, DATA_GID)
+
+if df_raw is None:
+    st.sidebar.error("Não foi possível carregar a base de dados do Google Sheets. Verifique o ID da planilha e o GID da aba, e se o link está público.")
+    st.stop()
 
 # detect important columns
 col_date = find_column(df_raw, ["DATA", "Data", "data"])
@@ -156,8 +149,12 @@ df = compute_monetized(df, col_cat, col_qty)
 # Sidebar (image + filters)
 # ---------------------------
 with st.sidebar:
-    st.image(BRASAO_PATH, use_container_width=True)
+    try:
+        st.image(BRASAO_PATH, use_container_width=True)
+    except FileNotFoundError:
+        st.warning(f"Imagem '{BRASAO_PATH}' não encontrada.")
     st.markdown("### Filtros")
+    
     # date range
     min_date = df[col_date].min()
     max_date = df[col_date].max()
@@ -173,9 +170,14 @@ with st.sidebar:
         start_date = end_date = date_range[0]
     else:
         start_date = end_date = date_range
+        
     # categories
     unique_cats = sorted(df[col_cat].dropna().astype(str).unique())
     selected_cats = st.multiselect("Categorias", options=unique_cats, default=unique_cats)
+    st.markdown("---")
+    if st.button("Limpar Cache de Dados"):
+        st.cache_data.clear()
+        st.rerun()
     st.markdown("---")
     st.markdown("**Instruções**: selecione período e categorias. O app calculará o valor monetizado usando os critérios oficiais listados no cabeçalho.")
     st.markdown("---")
@@ -187,8 +189,11 @@ with st.sidebar:
 
 # Background image styling (institucional, translúcido) e remoção de ícones fork/github/menu
 def get_base64_image(img_path):
-    with open(img_path, "rb") as img_file:
-        return base64.b64encode(img_file.read()).decode()
+    try:
+        with open(img_path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode()
+    except:
+        return "" # Retorna string vazia se falhar
 
 BRASAO_BASE64 = get_base64_image(BRASAO_PATH)
 PAGE_BG = f"""
@@ -227,8 +232,8 @@ st.markdown(f"""
 # description + monetization criteria
 st.markdown(
     """
-**Objetivo do aplicativo:**  
-Aplicativo para análise e monetização das apreensões registradas na Base_Monetização. Permite filtrar por data e categoria, gerar tabela dinâmica com valores monetizados, visualizar participação percentual e comparar com período anterior.
+**Objetivo do aplicativo:**
+Aplicativo para análise e monetização das apreensões registradas na Base_Monetização (agora carregada do Google Sheets). Permite filtrar por data e categoria, gerar tabela dinâmica com valores monetizados, visualizar participação percentual e comparar com período anterior.
 
 **Critérios de monetização (Categoria — Unidade — Custo Unitário R$):**
 """
@@ -279,7 +284,6 @@ else:
     group["QUANTIDADE"] = group["QUANTIDADE"].round(3)
 
 
-
     # Indicator: compare total_valor vs previous period
     prev_total_valor = df_prev["_VALOR_MONETIZADO"].sum() if not df_prev.empty else 0.0
     if prev_total_valor == 0 and total_valor == 0:
@@ -299,7 +303,8 @@ else:
     with c1:
         st.metric("Total Monetizado (R$)", f"R$ {total_valor:,.2f}", delta=delta_label, delta_color="normal")
     with c2:
-        st.metric("Total Quantidade", f"{int(total_qtd):,}")
+        # Usamos :,.3f para mostrar 3 casas decimais, já que a quantidade pode ser em Kg
+        st.metric("Total Quantidade", f"{total_qtd:,.3f}") 
     with c3:
         st.metric("Registros", f"{len(df_filt)}")
     with c4:
@@ -311,31 +316,19 @@ else:
     # Tabela dinâmica interativa (AgGrid) - oculta colunas REGISTROS, % do Valor e % da Quantidade
     st.subheader("Tabela Monetização por Categoria")
     group_display = group.drop(columns=["REGISTROS", "% do Valor", "% da Quantidade"], errors="ignore")
+    
     gb = GridOptionsBuilder.from_dataframe(group_display.reset_index(drop=True))
+    gb.configure_column("VALOR_MONETIZADO", valueFormatter='`R$ ` + value.toLocaleString("pt-BR", {minimumFractionDigits: 2, maximumFractionDigits: 2})')
+    gb.configure_column("QUANTIDADE", valueFormatter='value.toLocaleString("pt-BR", {minimumFractionDigits: 3, maximumFractionDigits: 3})')
+    
     gb.configure_pagination(paginationAutoPageSize=True)
     gb.configure_default_column(editable=False, groupable=True, filter=True, resizable=True, sortable=True)
     gb.configure_side_bar()
     gb.configure_selection('single')
     gridOptions = gb.build()
-    AgGrid(group_display.reset_index(drop=True), gridOptions=gridOptions, height=420, theme='alpine', fit_columns_on_grid_load=True)
+    AgGrid(group_display.reset_index(drop=True), gridOptions=gridOptions, height=420, theme='alpine', allow_unsafe_jscode=True, fit_columns_on_grid_load=True)
 
     
-
-    # ---------------------------
-    # Indicator: compare total_valor vs previous period
-    prev_total_valor = df_prev["_VALOR_MONETIZADO"].sum() if not df_prev.empty else 0.0
-    if prev_total_valor == 0 and total_valor == 0:
-        delta_label = "Sem dados"
-        delta_pct = None
-    else:
-        delta_val = total_valor - prev_total_valor
-        if prev_total_valor == 0:
-            pct_change = np.nan
-        else:
-            pct_change = (delta_val / prev_total_valor) * 100
-        delta_label = f"R$ {delta_val:,.2f}"
-        delta_pct = f"{pct_change:.2f}%" if not np.isnan(pct_change) else "N/A"
-
     # ---------------------------
     # 3D Chart (Plotly)
     # ---------------------------
@@ -376,16 +369,13 @@ else:
     # Also show pie for easy percentual view
     st.subheader("Distribuição percentual (pizza)")
     pie = go.Figure(go.Pie(labels=group[col_cat].astype(str), values=group["VALOR_MONETIZADO"], hole=0.35,
-                          hoverinfo="label+percent+value"))
+                           hoverinfo="label+percent+value",
+                           hovertemplate="%{label}<br>Valor: R$ %{value:,.2f}<br>Participação: %{percent}<extra></extra>"))
     pie.update_layout(height=450, margin=dict(l=0,r=0,t=30,b=0))
     st.plotly_chart(pie, use_container_width=True)
 
 # ---------------------------
 # Footer
 # ---------------------------
-df = compute_monetized(df, col_cat, col_qty)
-st.markdown("---")
-df_filt = df.loc[mask].copy()
-df_prev = df.loc[mask_prev].copy()
 st.markdown("---")
 st.markdown("<div style='text-align:center;font-size:1.1em;color:#002060;font-weight:bold;'>© 2025 4º Batalhão de Polícia Militar — 4º BPM PMRN.<br>Todos os direitos reservados.<br>Dados de monetização: 4º BPM PMRN</div>", unsafe_allow_html=True)
