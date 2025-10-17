@@ -56,14 +56,10 @@ MONET_MAP = {
 # Helpers
 # ---------------------------
 
-def try_load_excel(paths):
-    for p in paths:
-        try:
-            df = pd.read_excel(p, sheet_name=None)  # read all sheets
-            return p, df
-        except Exception as e:
-            continue
-    return None, None
+def try_load_excel():
+    EXCEL_FILE_PATH = "Tabela_Monetizacao_4 BPM_PM_RN.xlsx
+    df = pd.read_excel(EXCEL_FILE_PATH, sheet_name="Base_Monetização")
+    return df
 
 def detect_sheet_and_columns(sheets_dict):
     # Prefer sheet named like 'Base_Monetização' (se existir) ou primeira
