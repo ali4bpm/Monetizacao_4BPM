@@ -7,6 +7,7 @@ from st_aggrid import AgGrid, GridOptionsBuilder
 from PIL import Image
 import base64
 import io 
+import os # Importação mantida para eventual debug, mas sem uso direto
 
 st.set_page_config(
     page_title="MONETIZAÇÃO BATALHÃO POTENGI - 4º BPM PMRN", page_icon="brasao.jpg",
@@ -17,9 +18,8 @@ st.set_page_config(
 # ---------------------------
 # Config / assets
 # ---------------------------
-# DEFINIÇÃO DOS CAMINHOS DOS ARQUIVOS (USANDO OS NOMES EXATOS E FORMATO CSV)
-CRITERIA_PATH = "Tabela_Monetizacao_4 BPM_PM_RN.xlsx - Critérios.csv"
-BASE_DATA_PATH = "Tabela_Monetizacao_4 BPM_PM_RN.xlsx - Base_Monetização.csv"
+# USANDO O NOME DO ARQUIVO XLSX QUE FOI CONFIRMADO NO DIRETÓRIO
+EXCEL_PATH = "Tabela_Monetizacao_4 BPM_PM_RN.xlsx"
 BRASAO_PATH = "brasao.jpg" 
 
 # O MONET_MAP SERÁ GERADO DINAMICAMENTE
@@ -95,7 +95,7 @@ def compute_monetized(df, cat_col, qty_col, current_monet_map):
     return df.drop(columns=['__CATEGORIA_NORMALIZADA'])
 
 # ---------------------------
-# Funções de Carregamento de Dados (CSV)
+# Funções de Carregamento de Dados (XLSX com Cache)
 # ---------------------------
 
 # 1. Carrega os critérios para montar o MONET_MAP
@@ -103,19 +103,19 @@ def compute_monetized(df, cat_col, qty_col, current_monet_map):
 def load_criteria(path):
     criteria_map = {}
     try:
-        # Lendo o arquivo CSV
-        df_crit = pd.read_csv(path)
+        # Lendo a aba "Critérios" do XLSX
+        df_crit = pd.read_excel(path, engine='openpyxl', sheet_name='Critérios')
         
         # Normaliza colunas
         df_crit.columns = [c.strip() for c in df_crit.columns]
         
-        # Colunas esperadas no arquivo Critérios.csv
+        # Colunas esperadas no arquivo Critérios
         col_cat  = find_column(df_crit, ["Categoria"])
         col_unit = find_column(df_crit, ["Unidade de Medida"])
         col_cost = find_column(df_crit, ["Custo Unitário (R$)"])
         
         if not (col_cat and col_unit and col_cost):
-             st.error("Colunas essenciais (Categoria, Unidade de Medida, Custo Unitário (R$)) não encontradas no arquivo de Critérios.")
+             st.error("Colunas essenciais (Categoria, Unidade de Medida, Custo Unitário (R$)) não encontradas na aba 'Critérios'.")
              return None
         
         # Constrói o MONET_MAP
@@ -141,10 +141,14 @@ def load_criteria(path):
         return criteria_map
 
     except FileNotFoundError:
-        st.error(f"Arquivo de Critérios '{path}' não encontrado. Verifique se o nome do arquivo está EXATO.")
+        st.error(f"Arquivo XLSX '{path}' não encontrado. **Verifique se o nome do arquivo está EXATO: 'Tabela_Monetizacao_4 BPM_PM_RN.xlsx'.**")
+        return None
+    except ValueError as e:
+        # Este erro ocorre se a aba 'Critérios' não for encontrada
+        st.error(f"A aba **'Critérios'** não foi encontrada no arquivo '{path}'. Verifique o nome da aba no Excel.")
         return None
     except Exception as e:
-        st.error(f"Erro na leitura ou processamento do arquivo de Critérios CSV: {e}")
+        st.error(f"Erro na leitura ou processamento do arquivo de Critérios XLSX: {e}")
         return None
 
 # 2. Carrega e processa os dados da base principal
@@ -155,14 +159,19 @@ def load_base_data(path, current_monet_map):
         return None
         
     try:
-        # Lendo o arquivo CSV
-        df_raw = pd.read_csv(path)
+        # Lendo a aba "Base_Monetização" do XLSX
+        df_raw = pd.read_excel(path, engine='openpyxl', sheet_name='Base_Monetização')
         
     except FileNotFoundError:
-        st.error(f"Arquivo de Dados '{path}' não encontrado. Verifique se o nome do arquivo está EXATO.")
+        # Este erro já foi tratado no load_criteria, mas é mantido por segurança.
+        st.error(f"Arquivo XLSX '{path}' não encontrado.")
+        return None
+    except ValueError as e:
+        # Este erro ocorre se a aba 'Base_Monetização' não for encontrada
+        st.error(f"A aba **'Base_Monetização'** não foi encontrada no arquivo '{path}'. Verifique o nome da aba no Excel.")
         return None
     except Exception as e:
-        st.error(f"Erro na leitura e processamento do arquivo de Dados CSV: {e}")
+        st.error(f"Erro na leitura e processamento da aba de Dados XLSX: {e}")
         return None
 
     # 2. NORMALIZAR COLUNAS (remover espaços)
@@ -175,7 +184,7 @@ def load_base_data(path, current_monet_map):
     col_qty  = find_column(df_raw, ["Qtde", "Quantidade"])
 
     if col_date is None or col_cat is None or col_qty is None:
-        st.error("Colunas essenciais (Data, Categoria ou Qtde/Quantidade) não foram encontradas na tabela principal.")
+        st.error("Colunas essenciais (Data, Categoria ou Qtde/Quantidade) não foram encontradas na tabela principal ('Base_Monetização').")
         return None
 
     # 4. PREPARAÇÃO E CÁLCULO
@@ -190,11 +199,11 @@ def load_base_data(path, current_monet_map):
 # ---------------------------
 # Load data (CHAMADA PRINCIPAL)
 # ---------------------------
-MONET_MAP = load_criteria(CRITERIA_PATH)
+MONET_MAP = load_criteria(EXCEL_PATH)
 if MONET_MAP is None:
     st.stop()
     
-result = load_base_data(BASE_DATA_PATH, MONET_MAP)
+result = load_base_data(EXCEL_PATH, MONET_MAP)
 
 if result is None:
     st.stop()
@@ -208,7 +217,7 @@ df, col_date, col_cat, col_qty = result
 with st.sidebar:
     # BOTÃO DE ATUALIZAÇÃO: Limpa o cache e força a releitura do arquivo
     st.markdown("---")
-    if st.button("🔄 Atualizar Dados da Base", type="primary"):
+    if st.button("🔄 Atualizar Dados da Base (Limpa Cache)", type="primary"):
         st.cache_data.clear() # Invalida o cache
         st.experimental_rerun() # Re-executa o script
         
