@@ -60,7 +60,8 @@ def load_google_sheet_data(sheet_id, gid):
     """Carrega os dados diretamente do Google Sheets via URL de exportação CSV."""
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
     try:
-        df = pd.read_csv(url)
+        # CORREÇÃO: Adiciona decimal=',' para tratar o formato brasileiro (vírgula como decimal)
+        df = pd.read_csv(url, decimal=',')
         # Normaliza colunas
         df.columns = [col.strip() for col in df.columns]
         return df
@@ -87,11 +88,9 @@ def compute_monetized(df, cat_col, qty_col):
     def monet_value(row):
         cat = row.get(cat_col)
         qty = row.get(qty_col)
-        # Usa o valor já limpo na coluna col_qty, mas repete a checagem por segurança (agora é numérico)
         if pd.isna(qty) or qty == 0:
             return 0.0
         
-        # Como já garantimos que qty é numérico no bloco de carregamento, podemos usar diretamente.
         qty_num = qty
         
         # get unit cost
@@ -138,9 +137,8 @@ if col_qty is None:
 df = df_raw.copy()
 df = ensure_datetime(df, col_date)
 
-# FIX PRINCIPAL: Converte a coluna de quantidade para numérico.
-# Coerce (converte para NaN) qualquer valor que não seja numérico e, em seguida, preenche NaN com 0.
-# Isso garante que a coluna 'group["QUANTIDADE"]' seja do tipo float e evita o TypeError na divisão.
+# CONVERSÃO ESSENCIAL: Converte a coluna de quantidade para numérico (float)
+# com errors='coerce' para lidar com strings e valores vazios, preenchendo-os com 0.
 df[col_qty] = pd.to_numeric(df[col_qty], errors='coerce').fillna(0)
 
 # drop rows sem data
@@ -162,10 +160,13 @@ with st.sidebar:
     # date range
     min_date = df[col_date].min()
     max_date = df[col_date].max()
+    # Tratamento para min/max date que podem ser NaT
+    min_date_val = min_date.date() if pd.notna(min_date) else pd.to_datetime("2024-01-01").date()
+    max_date_val = max_date.date() if pd.notna(max_date) else pd.to_datetime("today").date()
+
     date_range = st.date_input(
         "Período",
-        value=(min_date.date() if pd.notna(min_date) else pd.to_datetime("today").date(),
-               max_date.date() if pd.notna(max_date) else pd.to_datetime("today").date())
+        value=(min_date_val, max_date_val)
     )
     # Garante que sempre teremos start_date e end_date como datas únicas
     if isinstance(date_range, (tuple, list)) and len(date_range) == 2:
@@ -283,7 +284,6 @@ else:
     total_qtd   = group["QUANTIDADE"].sum()
     # percentages
     
-    # Esta linha agora deve funcionar corretamente, pois group["QUANTIDADE"] é garantidamente numérico
     group["% do Valor"] = (group["VALOR_MONETIZADO"] / total_valor * 100).fillna(0).round(2)
     group["% da Quantidade"] = (group["QUANTIDADE"] / total_qtd * 100).fillna(0).round(2) 
     
